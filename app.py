@@ -30,50 +30,48 @@ MODEL_SMART = "gemini-3-pro-preview"
 # --- 常量定义 ---
 JOIN_KEY = "药品索引"
 FILE_FACT = "fact.csv"      
-FILE_DIM = "ipmdata.xlsx"    
+FILE_DIM = "ipmdata.xlsx"
+LOGO_FILE = "logo.png"    
 
 try:
     FIXED_API_KEY = st.secrets["GENAI_API_KEY"]
 except:
     FIXED_API_KEY = ""
 
-# ================= 2. 视觉体系 (Noir VI - 中文适配版) =================
+# ================= 2. 视觉体系 (Noir UI - 极客风格美化) =================
+
+def get_base64_image(image_path):
+    """读取本地 logo 图片并转为 Base64"""
+    if not os.path.exists(image_path):
+        return None
+    with open(image_path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode()
 
 def inject_custom_css():
     st.markdown("""
         <style>
-        /* 引入等宽字体 (英文字体保留，中文使用系统默认无衬线以保清晰) */
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600&display=swap');
         
-        /* === 全局去圆角 & 线框化 === */
         :root {
-            --bg-color: #000000;
+            --bg-color: #050505;
+            --sidebar-bg: #000000;
             --border-color: #333333;
-            --text-color: #E0E0E0;
+            --text-primary: #E0E0E0;
+            --accent-error: #FF3333;
         }
 
-        /* 强制字体和直角 */
+        /* 全局字体 */
         .stApp, .element-container, .stMarkdown, .stDataFrame, .stButton, div[data-testid="stDataEditor"] {
-            font-family: 'JetBrains Mono', "Microsoft YaHei", "SimHei", monospace !important;
+            font-family: 'JetBrains Mono', "Microsoft YaHei", monospace !important;
+            background-color: var(--bg-color);
         }
         
-        div, button, input, select, textarea {
-            border-radius: 0px !important;
-        }
+        div, button, input, select, textarea { border-radius: 0px !important; }
 
-        /* === 顶部导航栏 (Logo 左上角) === */
-        header[data-testid="stHeader"] {
-            background-color: transparent !important;
-            border: none !important;
-            pointer-events: none; 
-            z-index: 99;
-        }
-        
-        header[data-testid="stHeader"] > div:first-child {
-            background: transparent;
-        }
+        /* === 顶部导航栏 (透明 + Logo) === */
+        header[data-testid="stHeader"] { background: transparent !important; pointer-events: none; z-index: 90; }
+        header[data-testid="stHeader"] > div:first-child { background: transparent; }
 
-        /* 自定义顶部导航栏 */
         .fixed-header-container {
             position: fixed; top: 0; left: 0; width: 100%; height: 60px;
             background-color: rgba(0,0,0,0.95);
@@ -81,133 +79,68 @@ def inject_custom_css():
             z-index: 999990; 
             display: flex; align-items: center; justify-content: space-between;
             padding: 0 24px;
-            backdrop-filter: blur(5px);
         }
         
         .nav-left { display: flex; align-items: center; gap: 12px; }
-        .nav-logo-icon { width: 24px; height: 24px; background: #fff; display: flex; align-items: center; justify-content: center; }
-        .nav-logo-text { font-weight: 700; font-size: 20px; color: #FFF; letter-spacing: -1px; }
+        .nav-logo-img { height: 28px; width: auto; }
+        .nav-logo-text { font-weight: 700; font-size: 18px; color: #FFF; letter-spacing: -0.5px; }
         .nav-right { display: flex; align-items: center; gap: 16px; }
-        .nav-tag { font-size: 10px; background: #FFF; color: #000; padding: 2px 6px; font-weight: bold; }
+        .nav-tag { font-size: 10px; border: 1px solid #333; color: #888; padding: 2px 8px; }
 
         .block-container { padding-top: 80px !important; max-width: 1200px; }
         footer { display: none !important; }
 
-        /* === 侧边栏折叠按钮位置修改 === */
+        /* === 侧边栏按钮位置 (右下角折叠) === */
         section[data-testid="stSidebar"] button[kind="header"] {
-            position: absolute !important;
-            bottom: 20px !important;
-            right: 20px !important;
-            top: auto !important;
-            left: auto !important;
-            background-color: #111 !important;
-            border: 1px solid #333 !important;
-            color: #fff !important;
-            z-index: 999999 !important;
-            width: 32px; height: 32px;
-            pointer-events: auto;
+            position: absolute !important; bottom: 20px !important; right: 20px !important; top: auto !important; left: auto !important;
+            background-color: #111 !important; border: 1px solid #333 !important; color: #fff !important;
+            width: 32px; height: 32px; z-index: 999999; pointer-events: auto;
         }
-        section[data-testid="stSidebar"] button[kind="header"]:hover {
-            border-color: #fff !important;
-        }
-
         [data-testid="stSidebarCollapsedControl"] {
-            position: fixed !important;
-            bottom: 20px !important;
-            left: 20px !important;
-            top: auto !important;
-            z-index: 999999 !important;
-            background-color: #000 !important;
-            border: 1px solid #333 !important;
-            color: #fff !important;
-            padding: 4px !important;
-            pointer-events: auto;
-            visibility: visible !important;
-            display: flex !important;
+            position: fixed !important; bottom: 20px !important; left: 20px !important;
+            background-color: #000 !important; border: 1px solid #333 !important; color: #fff !important;
+            z-index: 999999;
         }
 
-        /* === 底部输入框 === */
-        [data-testid="stBottom"] {
-            background-color: transparent !important;
-            border-top: 1px solid var(--border-color);
-            padding-bottom: 20px;
+        /* === 错误提示美化 (黑底红框) === */
+        .stAlert { display: none; } /* 隐藏原生 Alert */
+        .custom-error {
+            background-color: rgba(40, 0, 0, 0.9); border: 1px solid var(--accent-error); color: #ffcccc;
+            padding: 15px; font-size: 13px; margin-bottom: 1rem; display: flex; align-items: center; gap: 10px;
         }
-        
-        .stChatInputContainer textarea {
-            background-color: #050505 !important;
-            color: #fff !important;
-            border: 1px solid #333 !important;
-        }
-        
-        .stChatInputContainer textarea:focus {
-            border-color: #fff !important;
-            box-shadow: none !important;
-        }
+        .custom-error::before { content: "[ERROR]"; color: var(--accent-error); font-weight: bold; }
 
         /* === 侧边栏 & 表格 === */
-        [data-testid="stSidebar"] {
-            background-color: #050505;
-            border-right: 1px solid var(--border-color);
-        }
+        [data-testid="stSidebar"] { background-color: var(--sidebar-bg); border-right: 1px solid var(--border-color); }
+        [data-testid="stDataFrame"] { background-color: #000 !important; border: 1px solid #333; }
         
-        [data-testid="stDataFrame"] {
-            background-color: #000 !important;
-            border: 1px solid #333;
-        }
-        
-        /* === 消息气泡 & 头像 === */
-        [data-testid="stChatMessage"] {
-            background-color: transparent !important;
-            border: none !important;
-            padding: 10px 0 !important;
-        }
-        
-        [data-testid="stChatMessageAvatarBackground"] {
-            background-color: #111 !important;
-            border: 1px solid #333;
-            color: #fff !important;
+        /* 侧边栏字段胶囊样式 */
+        .field-tag {
+            display: inline-block; background: #111; border: 1px solid #333; 
+            color: #888; font-size: 10px; padding: 2px 6px; margin: 2px;
         }
 
-        /* === 按钮样式 === */
-        div.stButton > button {
-            background-color: #000 !important;
-            color: #888 !important;
-            border: 1px solid #333 !important;
-            text-transform: uppercase;
-            font-size: 12px;
-            transition: all 0.3s;
-        }
-        div.stButton > button:hover {
-            color: #fff !important;
-            border-color: #fff !important;
-            background-color: #111 !important;
-        }
-
-        /* 卡片样式 */
-        .protocol-box {
-            background-color: #0A0A0A; padding: 15px; 
-            border: 1px solid #333; margin-bottom: 15px;
-            font-size: 12px;
-        }
-        .protocol-title { 
-            font-weight: 700; color: #FFF; margin-bottom: 10px; 
-            border-bottom: 1px solid #222; padding-bottom: 5px;
-        }
-        .protocol-row { display: flex; margin-bottom: 5px; }
-        .protocol-label { width: 80px; color: #666; font-size: 10px; }
-        .protocol-val { color: #CCC; }
-
-        .insight-box {
-            background: #0A0A0A; padding: 20px; 
-            border: 1px solid #333; border-left: 2px solid #FFF;
-            color: #CCC; font-size: 14px; line-height: 1.6;
-        }
+        /* === 聊天气泡 === */
+        [data-testid="stChatMessage"] { background: transparent !important; border: none !important; padding: 10px 0 !important; }
+        [data-testid="stChatMessageAvatarBackground"] { display: none !important; } /* 隐藏头像 */
         
-        .mini-insight {
-            color: #666; font-size: 12px; font-style: italic;
-            border-top: 1px solid #222; margin-top: 10px; padding-top: 5px;
-        }
+        /* 模拟终端前缀 */
+        .msg-prefix { font-weight: bold; margin-right: 8px; font-size: 12px; }
+        .p-user { color: #666; }
+        .p-ai { color: #00FF00; }
+
+        /* === 底部输入框 === */
+        [data-testid="stBottom"] { background: transparent !important; border-top: 1px solid var(--border-color); }
+        .stChatInputContainer textarea { background: #050505 !important; color: #fff !important; border: 1px solid #333 !important; }
         
+        /* 协议卡片 */
+        .protocol-box { background: #0A0A0A; padding: 12px; border: 1px solid #222; margin-bottom: 15px; font-size: 12px; }
+        .protocol-row { display: flex; justify-content: space-between; border-bottom: 1px dashed #222; padding: 4px 0; }
+        .protocol-key { color: #555; } .protocol-val { color: #CCC; }
+        
+        /* 洞察框 */
+        .insight-box { background: #0A0A0A; padding: 15px; border-left: 3px solid #FFF; color: #DDD; margin-top: 10px; }
+        .mini-insight { color: #666; font-size: 12px; font-style: italic; border-top: 1px solid #222; margin-top: 8px; padding-top: 4px; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -219,18 +152,18 @@ def get_client():
     try: return genai.Client(api_key=FIXED_API_KEY, http_options={'api_version': 'v1beta'})
     except Exception as e: st.error(f"SDK Error: {e}"); return None
 
-# --- 数据读取 ---
 @st.cache_data
 def load_local_data(filename):
+    # 增加鲁棒性，尝试读取
     if not os.path.exists(filename): return None
     df = None
     try:
-        df = pd.read_excel(filename, engine='openpyxl')
-    except:
-        try: df = pd.read_csv(filename)
-        except: 
-            try: df = pd.read_csv(filename, encoding='gbk')
-            except: return None
+        if filename.endswith('.xlsx'):
+            df = pd.read_excel(filename, engine='openpyxl')
+        else:
+            try: df = pd.read_csv(filename)
+            except: df = pd.read_csv(filename, encoding='gbk')
+    except: return None
 
     if df is not None:
         df.columns = df.columns.str.strip()
@@ -242,12 +175,8 @@ def load_local_data(filename):
             if any(k in str(col) for k in ['额', '量', 'Sales', 'Qty']):
                 try: df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
                 except: pass
-            
-            if any(k in str(col).lower() for k in ['日期', 'date', 'time', 'year', 'month', 'quarter', '年', '月', '季']):
-                try: 
-                    df[col] = pd.to_datetime(df[col], errors='coerce').fillna(df[col])
-                    if df[col].dtype.kind == 'M' and any(x in str(col).lower() for x in ['季', 'quarter']):
-                         df[col] = df[col].dt.to_period('Q').astype(str)
+            if any(k in str(col).lower() for k in ['日期', 'date', 'time', 'year', 'month']):
+                try: df[col] = pd.to_datetime(df[col], errors='coerce').fillna(df[col])
                 except: pass
         return df
     return None
@@ -259,7 +188,7 @@ def get_dataframe_info(df, name="df"):
     info.append("|---|---|---|")
     for col in df.columns:
         dtype = str(df[col].dtype)
-        sample = list(df[col].dropna().unique()[:5])
+        sample = list(df[col].dropna().unique()[:3])
         info.append(f"| {col} | {dtype} | {str(sample)} |")
     return "\n".join(info)
 
@@ -281,34 +210,20 @@ def format_display_df(df):
     if not isinstance(df, pd.DataFrame): return df
     df_fmt = df.copy()
     for col in df_fmt.columns:
-        col_str = str(col).lower()
-        is_numeric = pd.api.types.is_numeric_dtype(df_fmt[col])
-        if not is_numeric and df_fmt[col].dtype == 'object':
-            try:
-                temp = pd.to_numeric(df_fmt[col], errors='coerce')
-                if temp.notnull().sum() > 0: is_numeric = True; df_fmt[col] = temp
-            except: pass
-
-        if is_numeric:
-            if col_str in ['year', '年份', '年']:
-                try: df_fmt[col] = df_fmt[col].fillna(0).astype(int).astype(str).replace('0', '-')
-                except: pass
-            elif any(x in col_str for x in ['率', '比', 'ratio', '%']):
-                df_fmt[col] = df_fmt[col].apply(lambda x: f"{x:.1%}" if pd.notnull(x) else "-")
+        if pd.api.types.is_numeric_dtype(df_fmt[col]):
+            if "year" in str(col).lower() or "年" in str(col):
+                df_fmt[col] = df_fmt[col].apply(lambda x: str(int(x)) if pd.notnull(x) else "-")
             else:
-                df_fmt[col] = df_fmt[col].apply(lambda x: f"{x:,.0f}" if pd.notnull(x) else "-")
-        else:
-            if pd.api.types.is_datetime64_any_dtype(df_fmt[col]):
-                df_fmt[col] = df_fmt[col].dt.strftime('%Y-%m-%d')
+                df_fmt[col] = df_fmt[col].apply(lambda x: f"{x:,.2f}".rstrip('0').rstrip('.') if pd.notnull(x) else "-")
+        elif pd.api.types.is_datetime64_any_dtype(df_fmt[col]):
+            df_fmt[col] = df_fmt[col].dt.strftime('%Y-%m-%d')
     return df_fmt
 
 def normalize_result(res):
     if res is None: return pd.DataFrame()
     if isinstance(res, pd.DataFrame): return res
     if isinstance(res, pd.Series): return res.to_frame(name='数值').reset_index()
-    if isinstance(res, dict):
-        try: return pd.DataFrame([res]) 
-        except: return pd.DataFrame(list(res.items()), columns=['键', '值'])
+    if isinstance(res, dict): return pd.DataFrame(list(res.items()), columns=['Key', 'Value'])
     if isinstance(res, list): return pd.DataFrame(res)
     return pd.DataFrame([str(res)], columns=['结果'])
 
@@ -332,11 +247,8 @@ def get_history_context(limit=5):
 def render_protocol_card(summary):
     st.markdown(f"""
     <div class="protocol-box">
-        <div class="protocol-title">执行协议 (EXECUTION PROTOCOL)</div>
-        <div class="protocol-row"><div class="protocol-label">意图</div><div class="protocol-val">{summary.get('intent', '-')}</div></div>
-        <div class="protocol-row"><div class="protocol-label">范围</div><div class="protocol-val">{summary.get('scope', '-')}</div></div>
-        <div class="protocol-row"><div class="protocol-label">关键词</div><div class="protocol-val">{summary.get('key_match', 'N/A')}</div></div>
-        <div class="protocol-row"><div class="protocol-label">逻辑</div><div class="protocol-val">{summary.get('logic', '-')}</div></div>
+        <div class="protocol-row"><span class="protocol-key">INTENT</span><span class="protocol-val">{summary.get('intent', '-')}</span></div>
+        <div class="protocol-row"><span class="protocol-key">LOGIC</span><span class="protocol-val">{summary.get('logic', '-')}</span></div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -369,22 +281,23 @@ client = get_client()
 df_sales = load_local_data(FILE_FACT)
 df_product = load_local_data(FILE_DIM)
 
-# --- Top Nav (With Logo) ---
-svg_logo = """
-<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M4 4H20V20H4V4Z" fill="white"/>
-<path d="M8 8H16V16H8V8Z" fill="black"/>
-</svg>
-"""
+# --- Top Nav (本地 Logo 集成) ---
+logo_b64 = get_base64_image(LOGO_FILE)
+if logo_b64:
+    logo_html = f'<img src="data:image/png;base64,{logo_b64}" class="nav-logo-img">'
+else:
+    # 如果找不到 logo.png，使用 SVG 替代
+    logo_html = """<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M12 2L2 22h20L12 2zm0 3.5L19 20H5l7-14.5z"/></svg>"""
+
 st.markdown(f"""
 <div class="fixed-header-container">
     <div class="nav-left">
-        <div class="nav-logo-icon">{svg_logo}</div>
+        <div class="nav-logo-icon">{logo_html}</div>
         <div class="nav-logo-text">ChatBI.PRO</div>
     </div>
     <div class="nav-right">
-        <div class="nav-tag">管理员</div>
-        <button style="background:transparent; border:1px solid #333; color:#666; padding:4px 12px; cursor:pointer;" onclick="alert('已安全退出')">退出</button>
+        <div class="nav-tag">ADMIN</div>
+        <button style="background:transparent; border:1px solid #333; color:#666; padding:4px 12px; cursor:pointer;" onclick="alert('EXIT')">EXIT</button>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -393,30 +306,41 @@ if "messages" not in st.session_state: st.session_state.messages = []
 
 # --- Sidebar ---
 with st.sidebar:
-    st.markdown("### 系统状态")
+    st.markdown("### 系统状态 SYSTEM STATUS")
+    
+    # 1. Fact File Check
     if df_sales is not None:
-        st.markdown(f"[OK] {FILE_FACT} 已加载")
-        
-        # 尝试检测时间范围
-        date_cols = df_sales.select_dtypes(include=['datetime64', 'datetime64[ns]']).columns
-        if len(date_cols) > 0:
-            min_str = df_sales[date_cols[0]].min().strftime('%Y-%m-%d')
-            max_str = df_sales[date_cols[0]].max().strftime('%Y-%m-%d')
-            st.caption(f"数据范围: {min_str} -> {max_str}")
-            
-        st.divider()
-        st.markdown("**字段结构:**")
-        st.dataframe(pd.DataFrame(df_sales.columns, columns=["字段名"]), height=150, hide_index=True)
+        st.markdown(f"<span style='color:#00FF00'>[OK]</span> {FILE_FACT}", unsafe_allow_html=True)
+        # 侧边栏展示字段胶囊
+        st.markdown(f"<div style='margin-bottom:5px; color:#666; font-size:10px'>包含字段 ({len(df_sales.columns)}):</div>", unsafe_allow_html=True)
+        cols_html = "".join([f"<span class='field-tag'>{c}</span>" for c in df_sales.columns])
+        st.markdown(f"<div>{cols_html}</div>", unsafe_allow_html=True)
     else:
-        st.markdown(f"[错误] {FILE_FACT} 文件缺失")
+        st.markdown(f"<span style='color:#FF3333'>[ER]</span> {FILE_FACT} MISSING", unsafe_allow_html=True)
+        # 诊断信息：告诉用户当前目录是哪里，有哪些文件
+        cwd = os.getcwd()
+        try: files_in_dir = os.listdir(cwd)
+        except: files_in_dir = []
+        st.markdown(f"""
+        <div style='font-size:10px; color:#888; background:#111; padding:5px; margin-top:5px; border:1px solid #333'>
+        <b>PATH DIAGNOSIS:</b><br>
+        CWD: {cwd}<br>
+        FILES: {str(files_in_dir)[:100]}...
+        </div>
+        """, unsafe_allow_html=True)
 
+    st.markdown("---")
+
+    # 2. Dim File Check
     if df_product is not None:
-        st.markdown(f"[OK] {FILE_DIM} 已加载")
+        st.markdown(f"<span style='color:#00FF00'>[OK]</span> {FILE_DIM}", unsafe_allow_html=True)
+        cols_html = "".join([f"<span class='field-tag'>{c}</span>" for c in df_product.columns])
+        st.markdown(f"<div>{cols_html}</div>", unsafe_allow_html=True)
     else:
-        st.markdown(f"[错误] {FILE_DIM} 文件缺失")
+        st.markdown(f"<span style='color:#FF3333'>[ER]</span> {FILE_DIM} MISSING", unsafe_allow_html=True)
 
     st.divider()
-    if st.button("清除会话记忆", use_container_width=True):
+    if st.button("CLEAR MEMORY", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
     
@@ -426,14 +350,17 @@ with st.sidebar:
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"], avatar=None):
         if msg["type"] == "text": 
-            prefix = ">> " if msg["role"] == "assistant" else ""
-            st.markdown(prefix + msg["content"])
+            role_class = "p-ai" if msg["role"] == "assistant" else "p-user"
+            prefix = "SYS > " if msg["role"] == "assistant" else "USER > "
+            st.markdown(f"<span class='msg-prefix {role_class}'>{prefix}</span>{msg['content']}", unsafe_allow_html=True)
         elif msg["type"] == "df": 
             st.dataframe(msg["content"], use_container_width=True)
+        elif msg["type"] == "error":
+            st.markdown(f'<div class="custom-error">{msg["content"]}</div>', unsafe_allow_html=True)
 
 # --- 猜你想问 ---
 if not st.session_state.messages:
-    st.markdown("### 初始化查询")
+    st.markdown("### INITIALIZE QUERY")
     c1, c2, c3 = st.columns(3)
     def handle_preset(question):
         st.session_state.messages.append({"role": "user", "type": "text", "content": question})
@@ -443,13 +370,12 @@ if not st.session_state.messages:
     if c3.button("过亿独家品种"): handle_preset("销售额过亿的，独家创新药有哪些")
 
 # --- Input ---
-query = st.chat_input("请输入指令...")
+query = st.chat_input("Input command...")
 if query:
     st.session_state.messages.append({"role": "user", "type": "text", "content": query})
-    with st.chat_message("user", avatar=None):
-        st.markdown(query)
+    st.rerun()
 
-# --- Core Logic ---
+# --- Core Logic (完整的 AI 流程) ---
 if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
     
     try:
@@ -457,60 +383,51 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
         history_str = get_history_context(limit=5)
 
         with st.chat_message("assistant", avatar=None):
+            # 检查文件 (UI美化版报错)
             if df_sales is None or df_product is None:
-                st.error("数据源缺失，请检查上传文件。")
+                err_text = f"Data Source Missing. Check Sidebar for path diagnosis. (Needed: {FILE_FACT}, {FILE_DIM})"
+                st.markdown(f'<div class="custom-error">{err_text}</div>', unsafe_allow_html=True)
+                st.session_state.messages.append({"role": "assistant", "type": "error", "content": err_text})
                 st.stop()
 
             context_info = f"""
             {get_dataframe_info(df_sales, "df_sales")}
             {get_dataframe_info(df_product, "df_product")}
-            关联键: `{JOIN_KEY}`
+            KEY: `{JOIN_KEY}`
             """
 
-            # 1. 意图识别
-            with st.status("正在分析意图...", expanded=False) as status:
+            # 1. 意图识别 Router
+            with st.status("PROCESSING...", expanded=False) as status:
                 prompt_router = f"""
-                Classify intent based on history and query.
+                Classify intent.
                 History: {history_str}
                 Query: "{user_query}"
-                Categories: 
-                1. inquiry (simple data fetch, filter)
-                2. analysis (why, trend, breakdown, evaluation)
-                3. irrelevant
+                Categories: 1. inquiry (data fetch) 2. analysis (breakdown/trend/why) 3. irrelevant
                 Output JSON: {{ "type": "inquiry/analysis/irrelevant" }}
                 """
                 resp = safe_generate(client, MODEL_FAST, prompt_router, "application/json")
                 if "Error" in resp.text:
-                    status.update(label="API 连接错误", state="error")
+                    status.update(label="API ERROR", state="error")
                     st.stop()
                 intent = clean_json_string(resp.text).get('type', 'inquiry')
-                status.update(label=f"意图识别: {intent.upper()}", state="complete")
+                status.update(label=f"INTENT: {intent.upper()}", state="complete")
 
-            # 2. 简单查询
+            # 2. 简单查询 Inquiry Logic
             if intent == 'inquiry':
-                with st.spinner("正在构建代码..."):
+                with st.spinner("GENERATING CODE..."):
                     prompt_code = f"""
                     Role: Python Data Expert.
                     History: {history_str}
                     Query: "{user_query}"
                     Context: {context_info}
-                    
-                    Rules:
-                    1. Use `pd.merge` if needed.
-                    2. Define ALL variables used.
-                    3. No display functions (print/plot).
-                    4. Assign final result to variable `result`.
-                    
-                    Output JSON (Translate summary values to Chinese): 
-                    {{ "summary": {{ "intent": "数据查询", "scope": "...", "metrics": "...", "key_match": "...", "logic": "..." }}, "code": "..." }}
+                    Rules: pd.merge if needed. Define all vars. No print/plot. Final result to `result`.
+                    Output JSON: {{ "summary": {{ "intent": "...", "logic": "..." }}, "code": "..." }}
                     """
                     resp_code = safe_generate(client, MODEL_SMART, prompt_code, "application/json")
                     plan = clean_json_string(resp_code.text)
                 
                 if plan:
-                    s = plan.get('summary', {})
-                    render_protocol_card(s)
-
+                    render_protocol_card(plan.get('summary', {}))
                     try:
                         exec_ctx = {"df_sales": df_sales, "df_product": df_product}
                         res_raw = safe_exec_code(plan['code'], exec_ctx)
@@ -521,49 +438,37 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                             st.dataframe(formatted_df, use_container_width=True)
                             st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
                         else:
-                            st.warning("无精确匹配，尝试模糊搜索...")
+                            st.warning("No direct match, trying fuzzy search...")
                             fallback_code = f"result = df_product[df_product.astype(str).apply(lambda x: x.str.contains('{user_query[:2]}', case=False, na=False)).any(axis=1)].head(10)"
                             try:
                                 res_fallback = safe_exec_code(fallback_code, exec_ctx)
-                                res_fallback = normalize_result(res_fallback)
-                                if not safe_check_empty(res_fallback):
+                                if not safe_check_empty(normalize_result(res_fallback)):
                                     st.dataframe(res_fallback)
                                     st.session_state.messages.append({"role": "assistant", "type": "df", "content": res_fallback})
                                 else:
-                                    st.error("未找到相关数据。")
-                            except:
-                                st.error("未找到相关数据。")
+                                    st.markdown(f'<div class="custom-error">NO DATA FOUND</div>', unsafe_allow_html=True)
+                            except: pass
                     except Exception as e:
-                        st.error(f"代码执行错误: {e}")
+                        st.markdown(f'<div class="custom-error">CODE ERROR: {e}</div>', unsafe_allow_html=True)
 
-            # 3. 深度分析
+            # 3. 深度分析 Analysis Logic (完整保留)
             elif intent == 'analysis':
-                shared_ctx = {
-                    "df_sales": df_sales.copy(), 
-                    "df_product": df_product.copy(), 
-                }
+                shared_ctx = {"df_sales": df_sales.copy(), "df_product": df_product.copy()}
 
-                with st.spinner("规划分析路径..."):
+                with st.spinner("PLANNING ANALYSIS..."):
                     prompt_plan = f"""
                     Role: Senior Analyst.
                     History: {history_str}
                     Query: "{user_query}"
                     Context: {context_info}
-                    
-                    Task: Create 2-4 analysis angles.
-                    Rules:
-                    1. Share context variables between steps.
-                    2. Assign result of each step to `result`.
-                    3. Ensure `result` is a DataFrame.
-                    
-                    Output JSON (Use Chinese for title/desc/intent_analysis): 
-                    {{ "intent_analysis": "...", "angles": [ {{ "title": "...", "desc": "...", "summary": {{ "intent": "...", "scope": "...", "metrics": "...", "key_match": "...", "logic": "..." }}, "code": "..." }} ] }}
+                    Task: Create 2-3 analysis angles.
+                    Output JSON: {{ "intent_analysis": "...", "angles": [ {{ "title": "...", "desc": "...", "code": "..." }} ] }}
                     """
                     resp_plan = safe_generate(client, MODEL_SMART, prompt_plan, "application/json")
                     plan_json = clean_json_string(resp_plan.text)
                 
                 if plan_json:
-                    intro = f"### 意图分析\n{plan_json.get('intent_analysis')}"
+                    intro = f"**Analysis Plan:**\n{plan_json.get('intent_analysis')}"
                     st.markdown(intro)
                     st.session_state.messages.append({"role": "assistant", "type": "text", "content": intro})
                     
@@ -571,12 +476,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     
                     for angle in plan_json.get('angles', []):
                         with st.container():
-                            st.markdown(f"**{angle['title']}**")
-                            st.caption(angle['desc'])
-                            
-                            if 'summary' in angle:
-                                render_protocol_card(angle['summary'])
-                            
+                            st.markdown(f"**> {angle['title']}**")
                             try:
                                 res_raw = safe_exec_code(angle['code'], shared_ctx)
                                 res_df = normalize_result(res_raw)
@@ -584,52 +484,39 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                                 if not safe_check_empty(res_df):
                                     formatted_df = format_display_df(res_df)
                                     st.dataframe(formatted_df, use_container_width=True)
-                                    st.session_state.messages.append({"role": "assistant", "type": "text", "content": f"**{angle['title']}**"})
                                     st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
                                     
-                                    prompt_mini = f"Interpret data (1 sentence) in Chinese (用中文解释):\n{res_df.to_string()}"
+                                    prompt_mini = f"Interpret data (1 sentence) in Chinese:\n{res_df.to_string()}"
                                     resp_mini = safe_generate(client, MODEL_FAST, prompt_mini)
                                     explanation = resp_mini.text
                                     st.markdown(f'<div class="mini-insight">>> {explanation}</div>', unsafe_allow_html=True)
                                     angles_data.append({"title": angle['title'], "explanation": explanation})
                                 else:
-                                    st.warning(f"无数据: {angle['title']}")
+                                    st.warning(f"No data for {angle['title']}")
                             except Exception as e:
-                                st.error(f"执行错误: {e}")
+                                st.error(f"Error: {e}")
 
                     if angles_data:
-                        with st.spinner("正在综合结论..."):
+                        with st.spinner("SYNTHESIZING..."):
                             findings = "\n".join([f"[{a['title']}]: {a['explanation']}" for a in angles_data])
-                            prompt_final = f"""Based on findings: {findings}, answer: "{user_query}". Professional tone, markdown format. RESPONSE IN CHINESE (中文回答)."""
+                            prompt_final = f"""Based on findings: {findings}, answer: "{user_query}". Chinese. Professional."""
                             resp_final = safe_generate(client, MODEL_SMART, prompt_final)
                             insight = resp_final.text
                             st.markdown(f'<div class="insight-box">{insight}</div>', unsafe_allow_html=True)
-                            st.session_state.messages.append({"role": "assistant", "type": "text", "content": f"### 分析总结\n{insight}"})
+                            st.session_state.messages.append({"role": "assistant", "type": "text", "content": f"### SUMMARY\n{insight}"})
 
-                        with st.spinner("..."):
-                            prompt_next = f"""
-                            Suggest 2 follow-up questions based on: {insight} in Chinese (中文).
-                            Output JSON List: ["Q1", "Q2"]
-                            """
-                            resp_next = safe_generate(client, MODEL_FAST, prompt_next, "application/json")
-                            next_questions = clean_json_string(resp_next.text)
+                        # Follow-up questions
+                        prompt_next = f"Suggest 2 follow-up questions in Chinese based on {insight}. JSON List."
+                        resp_next = safe_generate(client, MODEL_FAST, prompt_next, "application/json")
+                        next_questions = clean_json_string(resp_next.text)
 
                         if isinstance(next_questions, list) and len(next_questions) > 0:
-                            st.markdown("### 建议追问")
+                            st.markdown("### CONTINUE")
                             c1, c2 = st.columns(2)
-                            
-                            c1.button(f"> {next_questions[0]}", use_container_width=True, on_click=handle_followup, args=(next_questions[0],))
-                                
-                            if len(next_questions) > 1:
-                                c2.button(f"> {next_questions[1]}", use_container_width=True, on_click=handle_followup, args=(next_questions[1],))
+                            if len(next_questions) > 0: c1.button(f"> {next_questions[0]}", use_container_width=True, on_click=handle_followup, args=(next_questions[0],))
+                            if len(next_questions) > 1: c2.button(f"> {next_questions[1]}", use_container_width=True, on_click=handle_followup, args=(next_questions[1],))
             else:
                 st.info("仅限数据查询")
-                st.session_state.messages.append({"role": "assistant", "type": "text", "content": "仅限数据查询"})
 
     except Exception as e:
-        st.error(f"系统异常: {str(e)}")
-        st.session_state.messages.append({
-            "role": "assistant", 
-            "type": "text", 
-            "content": "系统错误，请重试。"
-        })
+        st.markdown(f'<div class="custom-error">SYSTEM EXCEPTION: {str(e)}</div>', unsafe_allow_html=True)
