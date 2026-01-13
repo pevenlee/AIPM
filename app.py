@@ -38,7 +38,7 @@ try:
 except:
     FIXED_API_KEY = ""
 
-# ================= 2. 视觉体系 (Noir UI - 极客风格美化) =================
+# ================= 2. 视觉体系 (Noir UI - 思考可视化版) =================
 
 def get_base64_image(image_path):
     """读取本地 logo 图片并转为 Base64"""
@@ -102,8 +102,8 @@ def inject_custom_css():
             z-index: 999999;
         }
 
-        /* === 错误提示美化 (黑底红框) === */
-        .stAlert { display: none; } /* 隐藏原生 Alert */
+        /* === 错误提示美化 === */
+        .stAlert { display: none; }
         .custom-error {
             background-color: rgba(40, 0, 0, 0.9); border: 1px solid var(--accent-error); color: #ffcccc;
             padding: 15px; font-size: 13px; margin-bottom: 1rem; display: flex; align-items: center; gap: 10px;
@@ -120,19 +120,53 @@ def inject_custom_css():
             color: #888; font-size: 10px; padding: 2px 6px; margin: 2px;
         }
 
-        /* === 聊天气泡 === */
+        /* === 聊天气泡 & 黑白头像 === */
         [data-testid="stChatMessage"] { background: transparent !important; border: none !important; padding: 10px 0 !important; }
-        [data-testid="stChatMessageAvatarBackground"] { display: none !important; } /* 隐藏头像 */
         
-        /* 模拟终端前缀 */
+        [data-testid="stChatMessageAvatarBackground"] { 
+            background-color: #000000 !important; 
+            border: 1px solid #ffffff !important;
+            color: #ffffff !important;
+            box-shadow: none !important;
+            display: flex !important;
+        }
+        [data-testid="stChatMessageAvatarBackground"] svg {
+            fill: #ffffff !important; stroke: #ffffff !important;
+        }
+        
         .msg-prefix { font-weight: bold; margin-right: 8px; font-size: 12px; }
-        .p-user { color: #666; }
+        .p-user { color: #888; }
         .p-ai { color: #00FF00; }
 
         /* === 底部输入框 === */
         [data-testid="stBottom"] { background: transparent !important; border-top: 1px solid var(--border-color); }
         .stChatInputContainer textarea { background: #050505 !important; color: #fff !important; border: 1px solid #333 !important; }
         
+        /* === 思考过程展示区 (Thinking Box) === */
+        .thought-box {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: #888;
+            border-left: 2px solid #444;
+            padding-left: 10px;
+            margin-bottom: 10px;
+        }
+        .thought-header { font-weight: bold; color: #AAA; margin-bottom: 4px; display: block; }
+        
+        /* Streamlit Expander 美化 */
+        .streamlit-expanderHeader {
+            background-color: #0A0A0A !important;
+            color: #888 !important;
+            border: 1px solid #222 !important;
+            font-size: 12px !important;
+        }
+        .streamlit-expanderContent {
+            background-color: #050505 !important;
+            border: 1px solid #222 !important;
+            border-top: none !important;
+            color: #CCC !important;
+        }
+
         /* 协议卡片 */
         .protocol-box { background: #0A0A0A; padding: 12px; border: 1px solid #222; margin-bottom: 15px; font-size: 12px; }
         .protocol-row { display: flex; justify-content: space-between; border-bottom: 1px dashed #222; padding: 4px 0; }
@@ -154,7 +188,6 @@ def get_client():
 
 @st.cache_data
 def load_local_data(filename):
-    # 增加鲁棒性，尝试读取
     if not os.path.exists(filename): return None
     df = None
     try:
@@ -281,12 +314,11 @@ client = get_client()
 df_sales = load_local_data(FILE_FACT)
 df_product = load_local_data(FILE_DIM)
 
-# --- Top Nav (本地 Logo 集成) ---
+# --- Top Nav ---
 logo_b64 = get_base64_image(LOGO_FILE)
 if logo_b64:
     logo_html = f'<img src="data:image/png;base64,{logo_b64}" class="nav-logo-img">'
 else:
-    # 如果找不到 logo.png，使用 SVG 替代
     logo_html = """<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M12 2L2 22h20L12 2zm0 3.5L19 20H5l7-14.5z"/></svg>"""
 
 st.markdown(f"""
@@ -308,16 +340,13 @@ if "messages" not in st.session_state: st.session_state.messages = []
 with st.sidebar:
     st.markdown("### 系统状态 SYSTEM STATUS")
     
-    # 1. Fact File Check
     if df_sales is not None:
         st.markdown(f"<span style='color:#00FF00'>[OK]</span> {FILE_FACT}", unsafe_allow_html=True)
-        # 侧边栏展示字段胶囊
         st.markdown(f"<div style='margin-bottom:5px; color:#666; font-size:10px'>包含字段 ({len(df_sales.columns)}):</div>", unsafe_allow_html=True)
         cols_html = "".join([f"<span class='field-tag'>{c}</span>" for c in df_sales.columns])
         st.markdown(f"<div>{cols_html}</div>", unsafe_allow_html=True)
     else:
         st.markdown(f"<span style='color:#FF3333'>[ER]</span> {FILE_FACT} MISSING", unsafe_allow_html=True)
-        # 诊断信息：告诉用户当前目录是哪里，有哪些文件
         cwd = os.getcwd()
         try: files_in_dir = os.listdir(cwd)
         except: files_in_dir = []
@@ -331,7 +360,6 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # 2. Dim File Check
     if df_product is not None:
         st.markdown(f"<span style='color:#00FF00'>[OK]</span> {FILE_DIM}", unsafe_allow_html=True)
         cols_html = "".join([f"<span class='field-tag'>{c}</span>" for c in df_product.columns])
@@ -375,7 +403,7 @@ if query:
     st.session_state.messages.append({"role": "user", "type": "text", "content": query})
     st.rerun()
 
-# --- Core Logic (完整的 AI 流程) ---
+# --- Core Logic ---
 if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
     
     try:
@@ -383,7 +411,6 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
         history_str = get_history_context(limit=5)
 
         with st.chat_message("assistant", avatar=None):
-            # 检查文件 (UI美化版报错)
             if df_sales is None or df_product is None:
                 err_text = f"Data Source Missing. Check Sidebar for path diagnosis. (Needed: {FILE_FACT}, {FILE_DIM})"
                 st.markdown(f'<div class="custom-error">{err_text}</div>', unsafe_allow_html=True)
@@ -396,7 +423,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             KEY: `{JOIN_KEY}`
             """
 
-            # 1. 意图识别 Router
+            # 1. 意图识别
             with st.status("PROCESSING...", expanded=False) as status:
                 prompt_router = f"""
                 Classify intent.
@@ -412,7 +439,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                 intent = clean_json_string(resp.text).get('type', 'inquiry')
                 status.update(label=f"INTENT: {intent.upper()}", state="complete")
 
-            # 2. 简单查询 Inquiry Logic
+            # 2. 简单查询
             if intent == 'inquiry':
                 with st.spinner("GENERATING CODE..."):
                     prompt_code = f"""
@@ -427,6 +454,18 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     plan = clean_json_string(resp_code.text)
                 
                 if plan:
+                    # >>> 打印思考过程 (Thinking Process)
+                    with st.expander("> 查看思考链路 (THOUGHT PROCESS)", expanded=False):
+                        st.markdown(f"""
+                        <div class="thought-box">
+                            <span class="thought-header">LOGIC TRACE:</span>
+                            {plan.get('summary', {}).get('logic', 'No logic provided')}
+                        </div>
+                        """, unsafe_allow_html=True)
+                        st.markdown("**GENERATED CODE:**")
+                        st.code(plan.get('code'), language='python')
+                    # <<< 结束打印
+
                     render_protocol_card(plan.get('summary', {}))
                     try:
                         exec_ctx = {"df_sales": df_sales, "df_product": df_product}
@@ -451,7 +490,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     except Exception as e:
                         st.markdown(f'<div class="custom-error">CODE ERROR: {e}</div>', unsafe_allow_html=True)
 
-            # 3. 深度分析 Analysis Logic (完整保留)
+            # 3. 深度分析
             elif intent == 'analysis':
                 shared_ctx = {"df_sales": df_sales.copy(), "df_product": df_product.copy()}
 
@@ -469,7 +508,12 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                 
                 if plan_json:
                     intro = f"**Analysis Plan:**\n{plan_json.get('intent_analysis')}"
-                    st.markdown(intro)
+                    
+                    # >>> 打印思考过程
+                    with st.expander("> 查看分析思路 (ANALYSIS THOUGHT)", expanded=True):
+                        st.markdown(intro)
+                    # <<<
+                    
                     st.session_state.messages.append({"role": "assistant", "type": "text", "content": intro})
                     
                     angles_data = []
