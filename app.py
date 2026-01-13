@@ -18,7 +18,7 @@ warnings.filterwarnings('ignore')
 # ================= 1. 基础配置 =================
 
 st.set_page_config(
-    page_title="ChatBI Pro - 智能分析", 
+    page_title="ChatBI by Pharmcube", 
     layout="wide", 
     initial_sidebar_state="expanded"
 )
@@ -325,7 +325,7 @@ st.markdown(f"""
 <div class="fixed-header-container">
     <div class="nav-left">
         <div class="nav-logo-icon">{logo_html}</div>
-        <div class="nav-logo-text">ChatBI.PRO</div>
+        <div class="nav-logo-text">ChatBI</div>
     </div>
     <div class="nav-right">
         <div class="nav-tag">管理员</div>
@@ -388,14 +388,14 @@ for msg in st.session_state.messages:
 
 # --- 猜你想问 ---
 if not st.session_state.messages:
-    st.markdown("### 初始化查询")
+    st.markdown("### 通过与医药魔方交流，开启对医药市场的探索吧！")
     c1, c2, c3 = st.columns(3)
     def handle_preset(question):
         st.session_state.messages.append({"role": "user", "type": "text", "content": question})
         st.rerun()
-    if c1.button("肿瘤产品表现"): handle_preset("肿瘤产品的市场表现如何?")
-    if c2.button("查询K药销售"): handle_preset("查一下K药最近的销售额")
-    if c3.button("过亿独家品种"): handle_preset("销售额过亿的，独家创新药有哪些")
+    if c1.button("肿瘤产品的市场表现如何，哪些产品在驱动着市场的增长?"): handle_preset("肿瘤产品的市场表现如何，哪些产品在驱动着市场的增长?")
+    if c2.button("查一下K药最近2年的销售额"): handle_preset("查一下K药最近2年的销售额")
+    if c3.button("销售额过亿的，独家创新药有哪些，总结一下他们的画像"): handle_preset("销售额过亿的，独家创新药有哪些，总结一下他们的画像")
 
 # --- Input ---
 query = st.chat_input("请输入指令...")
