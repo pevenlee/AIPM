@@ -501,7 +501,7 @@ st.markdown(f"""
 <div class="fixed-header-container">
     <div class="nav-left">
         <div class="nav-logo-icon">{logo_html}</div>
-        <div class="nav-logo-text">ChatBI</div>
+        <div class="nav-logo-text">| ChatBI</div>
     </div>
     <div class="nav-right">
         <div class="nav-tag">Peiwen</div>
