@@ -20,7 +20,6 @@ warnings.filterwarnings('ignore')
 st.set_page_config(
     page_title="ChatBI by Pharmcube", 
     layout="wide", 
-    initial_sidebar_state="collapsed" # 默认折叠侧边栏
 )
 
 # --- 模型配置 ---
