@@ -192,11 +192,7 @@ def inject_custom_css():
             bottom: auto !important;
             
             /* 水平位置：靠侧边栏的右边缘 */
-            /* Streamlit 侧边栏宽度通常固定，但这会让它贴着侧边栏内容的右侧 */
             left: 300px !important; /* 这里需要根据侧边栏实际宽度微调，或者使用 right 配合 sidebar 上下文 */
-            /* 更稳妥的做法是覆盖默认样式，Streamlit 默认是在 header 里 */
-            /* 如果 position fixed 不好控制 left，我们可以改回 absolute */
-            /* 修正方案：使用 absolute 相对于侧边栏容器定位 */
             position: absolute !important; 
             right: 12px !important;      /* 距离侧边栏右边缘 12px */
             left: auto !important;
@@ -386,6 +382,58 @@ def get_dataframe_info(df, name="df"):
         info.append(f"| {col} | {dtype} | {str(sample)} |")
     return "\n".join(info)
 
+def get_time_range_str(df):
+    """根据数据自动识别时间范围 (格式: 2021Q1~2025Q3)"""
+    if df is None or df.empty:
+        return "-"
+    
+    cols = df.columns.astype(str)
+    # 寻找年份和季度字段
+    year_col = next((c for c in cols if '年' in c or 'Year' in c), None)
+    q_col = next((c for c in cols if '季' in c or 'Quarter' in c), None)
+    
+    if year_col and q_col:
+        try:
+            min_year = int(df[year_col].min())
+            max_year = int(df[year_col].max())
+            
+            # 获取起始年份的最小季度
+            min_q = df[df[year_col] == min_year][q_col].min()
+            # 获取结束年份的最大季度
+            max_q = df[df[year_col] == max_year][q_col].max()
+            
+            # 处理季度格式 (如果是 1,2,3,4 转为 Q1)
+            def fmt_q(val):
+                s = str(val).upper()
+                return s if 'Q' in s else f"Q{s}"
+
+            return f"{min_year}{fmt_q(min_q)} ~ {max_year}{fmt_q(max_q)}"
+        except:
+            pass
+            
+    # 如果没有季度，尝试只返回年份
+    if year_col:
+        try:
+            return f"{int(df[year_col].min())} ~ {int(df[year_col].max())}"
+        except:
+            pass
+
+    return "无法自动识别"
+
+def get_columns_by_keywords(df, keywords):
+    """根据关键词筛选列名"""
+    if df is None: return []
+    return [c for c in df.columns if any(k in c for k in keywords)]
+
+def render_sidebar_section(title, content):
+    """侧边栏小节渲染辅助"""
+    st.markdown(f"""
+    <div style="margin-bottom: 12px;">
+        <div style="color: #666; font-size: 10px; font-weight: bold; margin-bottom: 4px; text-transform: uppercase;">{title}</div>
+        <div style="color: #DDD; font-size: 13px;">{content}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
 def clean_json_string(text):
     try: return json.loads(text)
     except:
@@ -547,42 +595,62 @@ st.markdown(f"""
 
 if "messages" not in st.session_state: st.session_state.messages = []
 
-# --- Sidebar ---
+# --- Sidebar (新版) ---
 with st.sidebar:
-    st.markdown("### 系统状态 SYSTEM STATUS")
-    
-    if df_sales is not None:
-        st.markdown(f"<span style='color:#00FF00'>[正常]</span> {FILE_FACT}", unsafe_allow_html=True)
-        st.markdown(f"<div style='margin-bottom:5px; color:#666; font-size:10px'>包含字段 ({len(df_sales.columns)}):</div>", unsafe_allow_html=True)
-        cols_html = "".join([f"<span class='field-tag'>{c}</span>" for c in df_sales.columns])
-        st.markdown(f"<div>{cols_html}</div>", unsafe_allow_html=True)
-    else:
-        st.markdown(f"<span style='color:#FF3333'>[错误]</span> {FILE_FACT} 缺失", unsafe_allow_html=True)
-        cwd = os.getcwd()
-        try: files_in_dir = os.listdir(cwd)
-        except: files_in_dir = []
-        st.markdown(f"""
-        <div style='font-size:10px; color:#888; background:#111; padding:5px; margin-top:5px; border:1px solid #333'>
-        <b>路径诊断:</b><br>
-        当前目录: {cwd}<br>
-        文件列表: {str(files_in_dir)[:100]}...
-        </div>
-        """, unsafe_allow_html=True)
+    st.markdown("### 数据资产 DATA ASSETS")
+    st.markdown("---")
+
+    # 1. 静态范围定义
+    render_sidebar_section("产品范围 Product Scope", "全产品 (All Products)")
+    render_sidebar_section("渠道范围 Channel Scope", "核心医院 + 实体零售")
+
+    # 2. 动态时间范围 (从事实表 df_sales 读取)
+    time_scope = get_time_range_str(df_sales)
+    render_sidebar_section("时间范围 Time Scope", time_scope)
 
     st.markdown("---")
 
+    # 3. 字段透视 (从维度表 df_product 读取)
     if df_product is not None:
-        st.markdown(f"<span style='color:#00FF00'>[正常]</span> {FILE_DIM}", unsafe_allow_html=True)
-        cols_html = "".join([f"<span class='field-tag'>{c}</span>" for c in df_product.columns])
-        st.markdown(f"<div>{cols_html}</div>", unsafe_allow_html=True)
+        # 定义关键词组
+        drug_keywords = ['通用', '商品', '品名', '剂型', '治疗', 'ATC']
+        corp_keywords = ['企业', '厂家', '集团', '公司']
+        policy_keywords = ['集采', '医保', '基药', '一致性']
+
+        # 提取字段
+        drug_cols = get_columns_by_keywords(df_product, drug_keywords)
+        corp_cols = get_columns_by_keywords(df_product, corp_keywords)
+        policy_cols = get_columns_by_keywords(df_product, policy_keywords)
+
+        # 渲染函数
+        def render_tags(title, cols):
+            if not cols: return
+            html = "".join([f"<span class='field-tag'>{c}</span>" for c in cols])
+            st.markdown(f"""
+            <div style="margin-bottom: 12px;">
+                <div style="color: #666; font-size: 10px; font-weight: bold; margin-bottom: 4px;">{title}</div>
+                <div style="line-height: 1.5;">{html}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        render_tags("药品属性 DRUG FIELDS", drug_cols)
+        render_tags("企业属性 COMPANY FIELDS", corp_cols)
+        render_tags("政策属性 POLICY FIELDS", policy_cols)
     else:
-        st.markdown(f"<span style='color:#FF3333'>[错误]</span> {FILE_DIM} 缺失", unsafe_allow_html=True)
+        st.markdown(f"<span style='color:#FF3333; font-size:12px'>[错误] {FILE_DIM} 未加载</span>", unsafe_allow_html=True)
 
     st.divider()
-    if st.button("清除对话记忆", use_container_width=True):
+    
+    # 功能区
+    c1, c2 = st.columns(2)
+    if c1.button("清除记忆", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
     
+    if c2.button("重载数据", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
     st.markdown("<div style='height: 50px;'></div>", unsafe_allow_html=True)
 
 # --- Chat History ---
@@ -600,8 +668,8 @@ for msg in st.session_state.messages:
 
 # --- 猜你想问 (左对齐按钮) ---
 if not st.session_state.messages:
+    st.markdown("### Illuminating the Pharmaceutical Industry Through AI")
     st.markdown("### 我们正在通过人工智能重塑数据，点亮医药行业，有什么要问我们？")
-    st.markdown("###  ")
     c1, c2, c3 = st.columns(3)
     def handle_preset(question):
         st.session_state.messages.append({"role": "user", "type": "text", "content": question})
@@ -690,16 +758,6 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     5. 禁止使用 df.columns = [...] 强行改名，请使用 df.rename()。
                     6. **避免 'ambiguous' 错误**：如果 index name 与 column name 冲突，请在 reset_index() 前先使用 `df.index.name = None` 或重命名索引。
                     7. 结果必须赋值给变量 `result`。
-                    8. **份额计算强制规则**: 
-                    - 计算市场份额时，结果**必须乘以 100**，转换为百分数格式 (Percentage)。
-                    - 例如：销售额/总额 = 0.1234，应存储为 12.34，而不是 0.1234。
-                    - 列名必须包含 "(%)" 以提示用户，例如 "2024份额(%)"。
-                    9. **数据类型与精度**:
-                    - 份额列、变化率列：必须强制转换为 `float` 类型，保留 1 位小数 (`round(1)`)。
-                    - 销售额列：必须转换为 `int` 类型 (无小数)。
-                    - **严禁**对份额列使用 `astype(int)`，否则小于 1% 的份额会变成 0
-                    10. **市场份额** 当提到计算份额时，优先定义分母是用户提到的所有产品总 > 对应细分领域下所有产品总 > 全产品总和；然后再做计算
-                    
                     
                     【关键指令】
                     1. **数据范围检查**: 查看上下文中的日期范围。最新的日期决定了“当前周期”。
