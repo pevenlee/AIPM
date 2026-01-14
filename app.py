@@ -586,26 +586,32 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                 with st.spinner("正在生成查询代码，这个过程可能需要1~2分钟，请耐心等待…"):
                     # [中文提示词] 简单查询 & 四要素提取
                     prompt_code = f"""
-                    角色: Python 数据专家 (医药BI领域)。
-                    历史记录: {history_str}
-                    当前提问: "{user_query}"
-                    数据上下文: {context_info}
+                    你是一位医药行业的 Python 专家。
                     
-                    关键规则:
-                    1. **时间周期一致性**: 检查数据上下文中的日期范围,或年季范围。如果计算同比 (YoY) 增长，必须对比相同的月份周期 (例如: 如果数据截止到2025Q3，则对比2025年Q3YTD vs 2024年Q3YTD)。**严禁**拿部分年份的数据去对比完整的上一年数据。如果遇到询问市场规模类问题，默认用最新四个季度的滚动年
-                    2. **语言**: 所有解释性文字必须使用简体中文。
-                    3. 代码: 如果需要使用 `pd.merge`。定义所有变量。不要使用 `print` 或 `plot`。最终结果赋值给变量 `result`。
+                    【历史对话】(用于理解指代)
+                    {history_str}
                     
-                    严格输出 JSON (不要Markdown代码块): 
-                    {{ 
-                      "summary": {{ 
-                         "intent": "简单数据查询", 
-                         "scope": "产品: [产品名], 时间: [YYYY-MM ~ YYYY-MM]",
-                         "metrics": "销售额 / 增长率 / 份额...", 
-                         "logic": "1. 过滤xx产品; 2. 按xx聚合; 3. 计算同比增长..." 
-                      }}, 
-                      "code": "..." 
-                    }}
+                    【当前用户问题】
+                    "{user_query}"
+                    
+                    【数据上下文】 {context_info}
+                    
+                    【指令】 
+                    1. 严格按用户要求提取字段。
+                    2. 使用 `pd.merge` 关联两表 (除非用户只查单表)。
+                    3. **重要**: 确保所有使用的变量（如 market_share）都在代码中明确定义。不要使用未定义的变量。
+                    4. **绝对禁止**导入 IPython 或使用 display() 函数。
+                    5. 禁止使用 df.columns = [...] 强行改名，请使用 df.rename()。
+                    6. **避免 'ambiguous' 错误**：如果 index name 与 column name 冲突，请在 reset_index() 前先使用 `df.index.name = None` 或重命名索引。
+                    7. 结果必须赋值给变量 `result`。
+                    
+                    【摘要生成规则 (Summary)】
+                    - scope (范围): 数据的筛选范围。
+                    - metrics (指标): 用户查询的核心指标。
+                    - key_match (关键匹配): **必须说明**提取了用户什么词，去匹配了哪个列。例如："提取用户词 'K药' -> 模糊匹配 '商品名' 列"。
+                    - logic (加工逻辑): 简述筛选和计算步骤，严禁提及“表关联”、“Merge”等技术术语。
+                    
+                    输出 JSON: {{ "summary": {{ "intent": "简单取数", "scope": "...", "metrics": "...", "key_match": "...", "logic": "..." }}, "code": "..." }}
                     """
                     resp_code = safe_generate(client, MODEL_SMART, prompt_code, "application/json")
                     plan = clean_json_string(resp_code.text)
