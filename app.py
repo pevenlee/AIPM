@@ -235,15 +235,30 @@ def inject_custom_css():
         }
         .custom-error::before { content: "[错误]"; color: var(--accent-error); font-weight: bold; }
 
-        /* === 侧边栏 & 表格 === */
-        [data-testid="stSidebar"] { background-color: var(--sidebar-bg); border-right: 1px solid var(--border-color); }
-        [data-testid="stDataFrame"] { background-color: #000 !important; border: 1px solid #333; border-radius: var(--radius-md); }
-        
-        .field-tag {
-            display: inline-block; background: #111; border: 1px solid #333; 
-            color: #888; font-size: 10px; padding: 2px 6px; margin: 2px;
-            border-radius: 4px; /* 小圆角 */
+        /* === 侧边栏 & 表格 (修复版：固定侧边栏) === */
+        section[data-testid="stSidebar"] {
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            
+            /* --- 核心修复逻辑 START --- */
+            position: fixed !important;      /* 强制固定定位 */
+            top: 60px !important;            /* 距离顶部 60px (避开 Header) */
+            left: 0 !important;
+            bottom: 0 !important;
+            height: calc(100vh - 60px) !important; /* 高度 = 视窗高度 - Header高度 */
+            z-index: 99 !important;          /* 层级设置：低于 Header (999990) */
+            overflow-y: auto !important;     /* 允许侧边栏内部内容过长时滚动 */
+            padding-top: 20px !important;    /* 内部顶部留白，美观 */
+            /* --- 核心修复逻辑 END --- */
         }
+
+        /* 修复侧边栏内部容器，防止内容被裁剪 */
+        section[data-testid="stSidebar"] > div {
+            height: auto !important;
+            padding-bottom: 50px !important; /* 底部留白 */
+        }
+        
+        [data-testid="stDataFrame"] { background-color: #000 !important; border: 1px solid #333; border-radius: var(--radius-md); }
 
         /* === 聊天气泡 & 头像 === */
         [data-testid="stChatMessage"] { background: transparent !important; border: none !important; padding: 10px 0 !important; }
