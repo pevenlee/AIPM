@@ -488,7 +488,7 @@ if not st.session_state.messages:
     if c3.button("销售额过亿的，独家创新药有哪些，总结一下他们的画像"): handle_preset("销售额过亿的，独家创新药有哪些，总结一下他们的画像")
 
 # --- Input ---
-query = st.chat_input("请输入指令...")
+query = st.chat_input("请输入产品的相关内容...")
 if query:
     st.session_state.messages.append({"role": "user", "type": "text", "content": query})
     st.rerun()
@@ -542,7 +542,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             
             # 2. 简单查询
             if 'analysis' not in intent and 'irrelevant' not in intent:
-                with st.spinner("正在生成查询代码..."):
+                with st.spinner("正在生成查询代码，这个过程可能需要1~2分钟，请耐心等待…"):
                     prompt_code = f"""
                     Role: Python Data Expert.
                     History: {history_str}
