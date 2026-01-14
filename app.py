@@ -632,25 +632,51 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                                 st.error(f"分析错误: {e}")
 
                     if angles_data:
+                        # [新功能] 流式输出总结
                         st.markdown("### 分析总结")
+                        
                         findings = "\n".join([f"[{a['title']}]: {a['explanation']}" for a in angles_data])
                         prompt_final = f"""Based on findings: {findings}, answer: "{user_query}". Response in Chinese (中文). Professional tone."""
                         
+                        # 调用流式生成器并展示打字机效果
                         stream_gen = stream_generate(client, MODEL_SMART, prompt_final)
                         final_response = st.write_stream(stream_gen)
+                        
+                        # 记录完整回复
                         st.session_state.messages.append({"role": "assistant", "type": "text", "content": f"### 分析总结\n{final_response}"})
 
-                        # Follow-up questions
-                        prompt_next = f"Suggest 2 follow-up questions in Chinese based on {final_response}. Output JSON List."
+                        # === 修复开始：Follow-up questions ===
+                        # 1. 优化 Prompt：强制要求返回字符串列表，给出示例
+                        prompt_next = f"""
+                        Based on the analysis above, suggest 2 follow-up questions in Chinese. 
+                        Output ONLY a JSON List of strings. 
+                        Example format: ["第一个问题是什么?", "第二个问题是什么?"]
+                        """
                         resp_next = safe_generate(client, MODEL_FAST, prompt_next, "application/json")
                         next_questions = clean_json_string(resp_next.text)
 
                         if isinstance(next_questions, list) and len(next_questions) > 0:
                             st.markdown("### 建议追问")
                             c1, c2 = st.columns(2)
-                            # 按钮已在 CSS 强制左对齐
-                            if len(next_questions) > 0: c1.button(f"> {next_questions[0]}", use_container_width=True, on_click=handle_followup, args=(next_questions[0],))
-                            if len(next_questions) > 1: c2.button(f"> {next_questions[1]}", use_container_width=True, on_click=handle_followup, args=(next_questions[1],))
+                            
+                            # 2. 增加容错逻辑：如果模型还是返回了字典，尝试提取文本
+                            def get_q_text(q):
+                                if isinstance(q, str): 
+                                    return q
+                                if isinstance(q, dict): 
+                                    # 尝试提取可能的键
+                                    return q.get('question_zh', q.get('question', list(q.values())[0]))
+                                return str(q)
+
+                            # 渲染按钮
+                            if len(next_questions) > 0: 
+                                q1_text = get_q_text(next_questions[0])
+                                c1.button(f"> {q1_text}", use_container_width=True, on_click=handle_followup, args=(q1_text,))
+                            
+                            if len(next_questions) > 1: 
+                                q2_text = get_q_text(next_questions[1])
+                                c2.button(f"> {q2_text}", use_container_width=True, on_click=handle_followup, args=(q2_text,))
+                        # === 修复结束 ===
             
             elif 'irrelevant' in intent:
                 msg = "该问题似乎与医药数据无关，我是 ChatBI，专注于医药市场分析。"
