@@ -837,7 +837,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             # 3. 深度分析
             elif 'analysis' in intent:
                 
-                with st.spinner("正在规划分析路径..."):
+                with st.spinner("正在规划分析路径，这个过程可能需要1~2分钟，请耐心等待..."):
                     # [中文提示词] 深度分析 & 四要素提取
                     prompt_plan = f"""
                     角色: 资深医药数据分析师。
@@ -851,7 +851,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                         - 例如: 如果最大日期是 2025-09-30，那么“2024年数据”用于对比时，只能取 2024-01-01 到 2024-09-30，而不是2024全年的数据。
                     3. **代码安全**: 绝对禁止 `df = df.func(inplace=True)` 这种写法，这会导致 DataFrame 变成 NoneType 引发合并错误。
                     4. **语言**: 所有的 "title" (标题), "desc" (描述), 和 "intent_analysis" (分析思路) 必须使用**简体中文**。
-                    5. **完整性**: 提供 2-3 个不同的分析维度。
+                    5. **完整性**: 提供 2-5 个不同的分析维度。
                     6. **变量定义检查 (CRITICAL)**: 
                         - **严禁引用未定义的变量**（例如代码中出现了 `df_excl` 或 `df_temp` 但前面没有定义它）。
                         - 凡是使用的变量，必须在当前代码块中显式赋值。
