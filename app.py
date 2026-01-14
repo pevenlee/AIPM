@@ -782,32 +782,33 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                             st.markdown(f"**> {angle['title']}**")
                             try:
                                 res_raw = safe_exec_code(angle['code'], shared_ctx)
-                               if isinstance(res_raw, dict) and any(isinstance(v, (pd.DataFrame, pd.Series)) for v in res_raw.values()):
-                                res_df = pd.DataFrame() # 初始化为空，避免后面报错
-                                # 遍历字典，逐个展示
-                                for k, v in res_raw.items():
-                                    st.markdown(f"**- {k}**") # 显示子标题
-                                    sub_df = normalize_result(v) # 确保每个值也是标准 DF
-                                    st.dataframe(format_display_df(sub_df), use_container_width=True)
-                                    # 将最后一个子表作为主表用于后续生成 insight（或者你可以选择合并）
-                                    res_df = sub_df 
-                                    st.session_state.messages.append({"role": "assistant", "type": "df", "content": sub_df})
-                            else:
-                                # 常规处理：单表或简单值
-                                res_df = normalize_result(res_raw)
-                                if not safe_check_empty(res_df):
-                                    formatted_df = format_display_df(res_df)
-                                    st.dataframe(formatted_df, use_container_width=True)
-                                    st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
-                                    
-                                    # [中文提示词] 数据解读
-                                    prompt_mini = f"用一句话解读以下数据 (中文): \n{res_df.to_string()}"
-                                    resp_mini = safe_generate(client, MODEL_FAST, prompt_mini)
-                                    explanation = resp_mini.text
-                                    st.markdown(f'<div class="mini-insight">>> {explanation}</div>', unsafe_allow_html=True)
-                                    angles_data.append({"title": angle['title'], "explanation": explanation})
+                                # --- 修复点：调整了下方 if 的缩进，使其与上一行对齐 ---
+                                if isinstance(res_raw, dict) and any(isinstance(v, (pd.DataFrame, pd.Series)) for v in res_raw.values()):
+                                    res_df = pd.DataFrame() # 初始化为空，避免后面报错
+                                    # 遍历字典，逐个展示
+                                    for k, v in res_raw.items():
+                                        st.markdown(f"**- {k}**") # 显示子标题
+                                        sub_df = normalize_result(v) # 确保每个值也是标准 DF
+                                        st.dataframe(format_display_df(sub_df), use_container_width=True)
+                                        # 将最后一个子表作为主表用于后续生成 insight（或者你可以选择合并）
+                                        res_df = sub_df 
+                                        st.session_state.messages.append({"role": "assistant", "type": "df", "content": sub_df})
                                 else:
-                                    st.warning(f"{angle['title']} 暂无数据")
+                                    # 常规处理：单表或简单值
+                                    res_df = normalize_result(res_raw)
+                                    if not safe_check_empty(res_df):
+                                        formatted_df = format_display_df(res_df)
+                                        st.dataframe(formatted_df, use_container_width=True)
+                                        st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
+                                        
+                                        # [中文提示词] 数据解读
+                                        prompt_mini = f"用一句话解读以下数据 (中文): \n{res_df.to_string()}"
+                                        resp_mini = safe_generate(client, MODEL_FAST, prompt_mini)
+                                        explanation = resp_mini.text
+                                        st.markdown(f'<div class="mini-insight">>> {explanation}</div>', unsafe_allow_html=True)
+                                        angles_data.append({"title": angle['title'], "explanation": explanation})
+                                    else:
+                                        st.warning(f"{angle['title']} 暂无数据")
                             except Exception as e:
                                 st.error(f"分析错误: {e}")
 
