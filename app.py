@@ -24,8 +24,8 @@ st.set_page_config(
 )
 
 # --- 模型配置 ---
-MODEL_FAST = "gemini-3-flash-preview"        
-MODEL_SMART = "gemini-3-pro-preview"       
+MODEL_FAST = "gemini-2.0-flash"        
+MODEL_SMART = "gemini-2.0-flash"       
 
 # --- 常量定义 ---
 JOIN_KEY = "药品索引"
@@ -379,7 +379,7 @@ def get_history_context(limit=5):
         context_str += f"{role}: {content}\n"
     return context_str
 
-# === 修改：支持四要素展示的协议卡片 ===
+# === 支持四要素展示的协议卡片 ===
 def render_protocol_card(summary):
     """
     展示四要素：意图识别、产品/时间范围、计算指标、计算逻辑
@@ -554,15 +554,19 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             intent = "inquiry"
             
             with st.status("正在分析意图...", expanded=False) as status:
+                # [中文提示词] 意图路由
                 prompt_router = f"""
-                Classify intent based on context.
-                History: {history_str}
-                Query: "{user_query}"
-                Rules:
-                1. Specific numbers/data -> "inquiry"
-                2. Trends/reasons/breakdown -> "analysis"
-                3. Unrelated -> "irrelevant"
-                Output JSON: {{ "type": "result_value" }} (one of: "inquiry", "analysis", "irrelevant")
+                请根据以下上下文判断用户的意图。
+                
+                历史记录: {history_str}
+                当前提问: "{user_query}"
+                
+                规则:
+                1. 询问具体数值/数据/报表 -> "inquiry"
+                2. 询问趋势/原因/细分市场分析 -> "analysis"
+                3. 与医药数据无关 -> "irrelevant"
+                
+                严格输出 JSON: {{ "type": "result_value" }} (必须是 "inquiry", "analysis", "irrelevant" 之一)
                 """
                 resp = safe_generate(client, MODEL_FAST, prompt_router, "application/json")
                 
@@ -580,23 +584,23 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             # 2. 简单查询
             if 'analysis' not in intent and 'irrelevant' not in intent:
                 with st.spinner("正在生成查询代码，这个过程可能需要1~2分钟，请耐心等待…"):
-                    # --- 优化后的 prompt_code：强制输出四要素 ---
+                    # [中文提示词] 简单查询 & 四要素提取
                     prompt_code = f"""
-                    Role: Python Data Expert (PharmBI).
-                    History: {history_str}
-                    Query: "{user_query}"
-                    Context: {context_info}
+                    角色: Python 数据专家 (医药BI领域)。
+                    历史记录: {history_str}
+                    当前提问: "{user_query}"
+                    数据上下文: {context_info}
                     
-                    CRITICAL RULES:
-                    1. **Time Period Consistency**: Check the data range in Context. If calculating Year-over-Year (YoY) growth, ONLY compare the equivalent period (e.g., if data ends 2025-09, compare Jan-Sep 2025 vs Jan-Sep 2024). DO NOT compare a partial year to a full previous year.
-                    2. **Language**: The logic explanation MUST be in CHINESE (Simplified).
-                    3. Code: Use pd.merge if needed. Define all vars. No print/plot. Final result to variable `result`.
+                    关键规则:
+                    1. **时间周期一致性**: 检查数据上下文中的日期范围,或年季范围。如果计算同比 (YoY) 增长，必须对比相同的月份周期 (例如: 如果数据截止到2025Q3，则对比2025年Q3YTD vs 2024年Q3YTD)。**严禁**拿部分年份的数据去对比完整的上一年数据。如果遇到询问市场规模类问题，默认用最新四个季度的滚动年
+                    2. **语言**: 所有解释性文字必须使用简体中文。
+                    3. 代码: 如果需要使用 `pd.merge`。定义所有变量。不要使用 `print` 或 `plot`。最终结果赋值给变量 `result`。
                     
-                    Output JSON STRICTLY: 
+                    严格输出 JSON (不要Markdown代码块): 
                     {{ 
                       "summary": {{ 
                          "intent": "简单数据查询", 
-                         "scope": "产品: [Product Names], 时间: [YYYY-MM ~ YYYY-MM]",
+                         "scope": "产品: [产品名], 时间: [YYYY-MM ~ YYYY-MM]",
                          "metrics": "销售额 / 增长率 / 份额...", 
                          "logic": "1. 过滤xx产品; 2. 按xx聚合; 3. 计算同比增长..." 
                       }}, 
@@ -609,7 +613,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                 if plan:
                     # [新功能] 打印数据调用逻辑
                     summary_obj = plan.get('summary', {})
-                    logic_text = summary_obj.get('logic', 'No logic provided')
+                    logic_text = summary_obj.get('logic', '暂无逻辑描述')
                     
                     with st.expander("> 查看思考过程 (THOUGHT PROCESS)", expanded=True): 
                         # 使用 placeholder + simulated_stream 实现带样式的打字机效果
@@ -659,25 +663,25 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                 shared_ctx = {"df_sales": df_sales.copy(), "df_product": df_product.copy()}
 
                 with st.spinner("正在规划分析路径..."):
-                    # --- 优化后的 prompt_plan：同样要求输出 summary 对象 ---
+                    # [中文提示词] 深度分析 & 四要素提取
                     prompt_plan = f"""
-                    Role: Senior Pharmaceutical Data Analyst.
-                    History: {history_str}
-                    Query: "{user_query}"
-                    Context: {context_info}
+                    角色: 资深医药数据分析师。
+                    历史记录: {history_str}
+                    当前提问: "{user_query}"
+                    数据上下文: {context_info}
                     
-                    CRITICAL INSTRUCTIONS:
-                    1. **Data Range Check**: Look at the date range in `Context`. The latest date determines the "Current Period".
-                    2. **Like-for-Like Comparison**: When analyzing growth or trends across years, YOU MUST filter the previous year's data to match the current year's month/quarter range (Year-To-Date logic). 
-                       - Example: If max date is 2025-09-30, "2024 data" for comparison implies 2024-01-01 to 2024-09-30, NOT the full year 2024.
-                    3. **Language**: All "title", "desc", and "intent_analysis" MUST be in SIMPLIFIED CHINESE.
-                    4. **Completeness**: Provide 2-3 distinct analysis angles.
+                    关键指令:
+                    1. **数据范围检查**: 查看上下文中的日期范围。最新的日期决定了“当前周期”。
+                    2. **同口径对比 (Like-for-Like)**: 当分析跨年增长或趋势时，**必须**筛选前一年的数据以匹配当前年份的月份/季度范围 (YTD逻辑)。
+                       - 例如: 如果最大日期是 2025-09-30，那么“2024年数据”用于对比时，只能取 2024-01-01 到 2024-09-30，而不是2024全年的数据。
+                    3. **语言**: 所有的 "title" (标题), "desc" (描述), 和 "intent_analysis" (分析思路) 必须使用**简体中文**。
+                    4. **完整性**: 提供 2-3 个不同的分析维度。
                     
-                    Output JSON STRICTLY (No markdown, no ```json wrapper): 
+                    严格输出 JSON (不要Markdown, 不要代码块): 
                     {{ 
                         "summary": {{ 
                              "intent": "深度市场分析", 
-                             "scope": "产品: [Product Names], 时间: [YYYY-MM ~ YYYY-MM]",
+                             "scope": "产品: [产品名], 时间: [YYYY-MM ~ YYYY-MM]",
                              "metrics": "趋势 / 结构 / 增长驱动力...", 
                              "logic": "1. 总体趋势分析; 2. 产品结构拆解; 3. 增长贡献度计算..." 
                         }},
@@ -722,7 +726,8 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                                     st.dataframe(formatted_df, use_container_width=True)
                                     st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
                                     
-                                    prompt_mini = f"Interpret data (1 sentence) in Chinese (中文解释):\n{res_df.to_string()}"
+                                    # [中文提示词] 数据解读
+                                    prompt_mini = f"用一句话解读以下数据 (中文): \n{res_df.to_string()}"
                                     resp_mini = safe_generate(client, MODEL_FAST, prompt_mini)
                                     explanation = resp_mini.text
                                     st.markdown(f'<div class="mini-insight">>> {explanation}</div>', unsafe_allow_html=True)
@@ -735,23 +740,25 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     if angles_data:
                         st.markdown("### 分析总结")
                         findings = "\n".join([f"[{a['title']}]: {a['explanation']}" for a in angles_data])
-                        prompt_final = f"""Based on findings: {findings}, answer: "{user_query}". Response in Chinese (中文). Professional tone."""
+                        # [中文提示词] 最终总结
+                        prompt_final = f"""基于以下发现: {findings}，回答问题: "{user_query}"。请使用专业、客观的中文口吻。"""
                         
                         stream_gen = stream_generate(client, MODEL_SMART, prompt_final)
                         final_response = st.write_stream(stream_gen)
                         st.session_state.messages.append({"role": "assistant", "type": "text", "content": f"### 分析总结\n{final_response}"})
 
                         # === Follow-up questions ===
+                        # [中文提示词] 追问生成
                         prompt_next = f"""
-                        基于上述分析，输出两个跟使用本数据库相关，引导客户追问思路的问题. 
-                        Output ONLY a JSON List of strings. 
-                        Example format: ["第一个问题是什么?", "第二个问题是什么?"]
+                        基于以上分析，建议2个相关的追问问题（中文）。
+                        仅输出一个 JSON 字符串列表。
+                        示例格式: ["第一个问题是什么?", "第二个问题是什么?"]
                         """
-                        resp_next = safe_generate(client, MODEL_SMART, prompt_next, "application/json")
+                        resp_next = safe_generate(client, MODEL_FAST, prompt_next, "application/json")
                         next_questions = clean_json_string(resp_next.text)
 
                         if isinstance(next_questions, list) and len(next_questions) > 0:
-                            st.markdown("### 是否还想问如下问题？")
+                            st.markdown("### 建议追问")
                             c1, c2 = st.columns(2)
                             
                             def get_q_text(q):
