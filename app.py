@@ -436,7 +436,7 @@ if not st.session_state.messages:
         st.rerun()
     if c1.button("第十一批集采对哪些中国医药市场产生了什么样的影响？"): handle_preset("第十一批集采对哪些中国医药市场产生了什么样的影响？")
     if c2.button("K药、O药、拓益、艾瑞卡、达伯舒、百泽安最近2年的销售额、份额、份额变化"): handle_preset("K药、O药、拓益、艾瑞卡、达伯舒、百泽安最近2年的销售额、份额、份额变化")
-    if c3.button("销售额过亿的，独家创新药有哪些，总结一下他们的画像"): handle_preset("销售额过亿的，独家创新药有哪些，总结一下他们的画像")
+    if c3.button("销售额过亿的，独家处方药有哪些，总结一下他们的画像"): handle_preset("销售额过亿的，独家处方药有哪些，总结一下他们的画像")
 
 # --- Input ---
 query = st.chat_input("了解中国医药市场，从这里开始...")
@@ -758,7 +758,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                         # === Follow-up questions ===
                         # [中文提示词] 追问生成
                         prompt_next = f"""
-                        基于上述查询结果和数据库字段有的字段，建议2个相关的追问问题。
+                        基于上述查询结果和数据库有的字段，建议2个相关的追问问题。
                         仅输出一个 JSON 字符串列表。
                         示例格式: ["第一个问题是什么?", "第二个问题是什么?"]
                         """
