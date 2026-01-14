@@ -131,7 +131,7 @@ def inject_custom_css():
         .block-container { padding-top: 80px !important; max-width: 1200px; }
         footer { display: none !important; }
 
-        /* === 侧边栏控制按钮 (强力修复版) === */
+        /* === 侧边栏控制按钮 (强力修复版) - 已修改为垂直居中 === */
         
         /* 1. [关键] 展开按钮 (当侧边栏收起时显示) */
         [data-testid="stSidebarCollapsedControl"], 
@@ -141,17 +141,21 @@ def inject_custom_css():
             visibility: visible !important;
             opacity: 1 !important;
             
-            /* 强制位置：避开底部的 ChatInput (高度通常约 80px) */
+            /* --- 位置调整核心代码 START --- */
             position: fixed !important;
-            left: 20px !important;
-            bottom: 100px !important; /* <--- 关键修改：从 20px 提到 100px */
-            top: auto !important;
+            left: 12px !important;        /* 稍微靠左一些，贴合边缘 */
+            top: 50% !important;          /* 垂直位置设为 50% */
+            bottom: auto !important;      /* 移除底部的定位 */
             right: auto !important;
             
-            /* 层级：必须高于 ChatInput (stBottom 通常是 z-index 100) */
+            /* 向上偏移自身高度的 50%，实现完美垂直居中 */
+            transform: translateY(-50%) !important; 
+            /* --- 位置调整核心代码 END --- */
+            
+            /* 层级：必须极高 */
             z-index: 2147483647 !important; 
             
-            /* 样式：高亮显示 */
+            /* 样式 */
             background-color: #111 !important;
             color: #fff !important;
             border: 2px solid #666 !important;
@@ -159,36 +163,67 @@ def inject_custom_css():
             width: 44px !important;
             height: 44px !important;
             
-            /* 阴影让它浮起来 */
+            /* 阴影 */
             box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
             
-            /* 交互：强制开启点击 */
+            /* 交互 */
             pointer-events: auto !important;
             cursor: pointer !important;
-            transition: transform 0.3s ease !important;
+            transition: all 0.3s ease !important;
         }
 
-        /* hover 效果 */
+        /* hover 效果 - 注意：必须保留 translateY(-50%) 否则悬停时位置会跳动 */
         [data-testid="stSidebarCollapsedControl"]:hover {
             background-color: #333 !important;
-            transform: scale(1.1);
+            /* 保持居中的同时进行缩放 */
+            transform: translateY(-50%) scale(1.1) !important; 
             border-color: #FFF !important;
         }
 
         /* 2. 关闭按钮 (当侧边栏展开时显示，位于侧边栏内部) */
         section[data-testid="stSidebar"] button[kind="header"] {
-            display: block !important;
-            position: absolute !important;
-            bottom: 20px !important;
-            right: 20px !important;
-            top: auto !important;
+            display: flex !important; /* 确保内容居中 */
+            align-items: center !important;
+            justify-content: center !important;
+            
+            /* --- 位置调整核心代码 START --- */
+            position: fixed !important; /* 使用 fixed 确保它相对于屏幕视口定位，不随侧边栏内容滚动 */
+            top: 50% !important;
+            bottom: auto !important;
+            
+            /* 水平位置：靠侧边栏的右边缘 */
+            /* Streamlit 侧边栏宽度通常固定，但这会让它贴着侧边栏内容的右侧 */
+            left: 300px !important; /* 这里需要根据侧边栏实际宽度微调，或者使用 right 配合 sidebar 上下文 */
+            /* 更稳妥的做法是覆盖默认样式，Streamlit 默认是在 header 里 */
+            /* 如果 position fixed 不好控制 left，我们可以改回 absolute */
+            /* 修正方案：使用 absolute 相对于侧边栏容器定位 */
+            position: absolute !important; 
+            right: 12px !important;      /* 距离侧边栏右边缘 12px */
             left: auto !important;
+            /* --- 位置调整核心代码 END --- */
+
+            /* 垂直居中修正 */
+            transform: translateY(-50%) !important;
             
             z-index: 999999 !important;
             
+            /* 样式美化 */
             background-color: #222 !important;
             color: #fff !important;
             border: 1px solid #444 !important;
+            border-radius: 50% !important; /* 改成圆形，视觉更统一 */
+            width: 36px !important;
+            height: 36px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+            transition: all 0.2s ease !important;
+        }
+
+        /* 悬停效果 - 同样需要保持 translateY(-50%) */
+        section[data-testid="stSidebar"] button[kind="header"]:hover {
+            background-color: #444 !important;
+            color: #FFF !important;
+            border-color: #FFF !important;
+            transform: translateY(-50%) scale(1.1) !important;
         }
 
         /* === 错误提示美化 === */
