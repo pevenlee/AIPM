@@ -676,8 +676,8 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                             # ==========================================
                             try:
                                 prompt_next = f"""
-                                基于上述查询结果和用户历史问题："{user_query}"，
-                                预测用户下一步可能最想深入挖掘的2个问题（中文）。
+                                基于上述查询结果和数据库字段内容："{user_query}"，
+                                给出两个客户最想深入挖掘的2个问题（中文）。
                                 
                                 严格输出 JSON 字符串列表。
                                 示例格式: ["为什么2024年份额下降了?", "查看该产品的分医院排名"]
@@ -782,8 +782,19 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                             st.markdown(f"**> {angle['title']}**")
                             try:
                                 res_raw = safe_exec_code(angle['code'], shared_ctx)
+                               if isinstance(res_raw, dict) and any(isinstance(v, (pd.DataFrame, pd.Series)) for v in res_raw.values()):
+                                res_df = pd.DataFrame() # 初始化为空，避免后面报错
+                                # 遍历字典，逐个展示
+                                for k, v in res_raw.items():
+                                    st.markdown(f"**- {k}**") # 显示子标题
+                                    sub_df = normalize_result(v) # 确保每个值也是标准 DF
+                                    st.dataframe(format_display_df(sub_df), use_container_width=True)
+                                    # 将最后一个子表作为主表用于后续生成 insight（或者你可以选择合并）
+                                    res_df = sub_df 
+                                    st.session_state.messages.append({"role": "assistant", "type": "df", "content": sub_df})
+                            else:
+                                # 常规处理：单表或简单值
                                 res_df = normalize_result(res_raw)
-                                
                                 if not safe_check_empty(res_df):
                                     formatted_df = format_display_df(res_df)
                                     st.dataframe(formatted_df, use_container_width=True)
@@ -813,7 +824,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                         # === Follow-up questions ===
                         # [中文提示词] 追问生成
                         prompt_next = f"""
-                        基于以上分析，建议2个相关的追问问题（中文）。
+                        基于以上分析，结合数据库内容，建议2个相关的追问问题。
                         仅输出一个 JSON 字符串列表。
                         示例格式: ["第一个问题是什么?", "第二个问题是什么?"]
                         """
