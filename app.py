@@ -489,41 +489,7 @@ with st.sidebar:
         else:
             st.markdown(f"<span style='font-size:11px; color:#555;'>暂无字段</span>", unsafe_allow_html=True)
 
-    # 1. 产品信息
-    product_fields = [
-        "通用名", "商品名", "药品名称", "成分名", "生产企业", "集团名称", 
-        "规格", "剂型", "ATC1Des", "ATC2Des", "ATC3Des", "ATC4Des",
-        "药品分类", "药品分类二", "OTC", "零售分类1 描述", "零售分类2 描述", "零售分类3 描述",
-        "研究类型", "企业类型"
-    ]
-    render_chips("🛒 产品信息", product_fields)
-
-    # 2. 政策标签
-    policy_fields = ["医保", "最早医保纳入年份", "集采批次", "集采结果", "一致性评价", "首次上市年代"]
-    render_chips("◆ 政策标签", policy_fields)
-
-    # 3. 指标类型
-    metric_fields = ["销售额", "销售量"]
-    render_chips("〽︎ 指标类型", metric_fields)
-
-    # 4. 渠道
-    # 尝试从数据中获取渠道值，如果不行则显示字段名
-    channel_items = []
-    if df_sales is not None and "渠道" in df_sales.columns:
-        try:
-            unique_channels = df_sales["渠道"].dropna().unique().tolist()
-            if len(unique_channels) < 10: # 如果渠道数量少，显示具体值
-                channel_items = unique_channels
-            else:
-                channel_items = ["渠道"]
-        except:
-            channel_items = ["渠道"]
-    else:
-        channel_items = ["渠道"]
-    
-    render_chips("⚙︎ 渠道范围", channel_items)
-
-    # 5. 时间
+    # ================= [修改] 1. 时间范围 (已移至最前) =================
     time_range_str = "未加载"
     if df_sales is not None:
         # 尝试寻找时间列
@@ -551,9 +517,44 @@ with st.sidebar:
     
     render_chips("⏱︎ 数据时间", [time_range_str], is_highlight=True)
 
+    # ================= 2. 产品信息 =================
+    product_fields = [
+        "通用名", "商品名", "药品名称", "成分名", "生产企业", "集团名称", 
+        "规格", "剂型", "ATC1Des", "ATC2Des", "ATC3Des", "ATC4Des",
+        "药品分类", "药品分类二", "OTC", "零售分类1 描述", "零售分类2 描述", "零售分类3 描述",
+        "研究类型", "企业类型"
+    ]
+    render_chips("🛒 产品信息", product_fields)
+
+    # ================= 3. 政策标签 =================
+    policy_fields = ["医保", "最早医保纳入年份", "集采批次", "集采结果", "一致性评价", "首次上市年代"]
+    render_chips("◆ 政策标签", policy_fields)
+
+    # ================= 4. 指标类型 =================
+    metric_fields = ["销售额", "销售量"]
+    render_chips("〽︎ 指标类型", metric_fields)
+
+    # ================= 5. 渠道 =================
+    # 尝试从数据中获取渠道值，如果不行则显示字段名
+    channel_items = []
+    if df_sales is not None and "渠道" in df_sales.columns:
+        try:
+            unique_channels = df_sales["渠道"].dropna().unique().tolist()
+            if len(unique_channels) < 10: # 如果渠道数量少，显示具体值
+                channel_items = unique_channels
+            else:
+                channel_items = ["渠道"]
+        except:
+            channel_items = ["渠道"]
+    else:
+        channel_items = ["渠道"]
+    
+    render_chips("⚙︎ 渠道范围", channel_items)
+
+
     st.markdown("---")
     st.markdown(f"<div style='font-size:10px; color:#666; text-align:center;'>Powered by {MODEL_SMART}</div>", unsafe_allow_html=True)
-
+    
 # --- Top Nav ---
 logo_b64 = get_base64_image(LOGO_FILE)
 if logo_b64:
