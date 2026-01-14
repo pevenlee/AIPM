@@ -802,7 +802,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                                 next_questions = clean_json_string(resp_next.text)
 
                                 if isinstance(next_questions, list) and len(next_questions) > 0:
-                                    st.markdown("### 建议追问")
+                                    st.markdown("### 是否追问")
                                     c1, c2 = st.columns(2)
                                     
                                     def get_q_text_safe(q):
@@ -966,11 +966,11 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                         仅输出一个 JSON 字符串列表。
                         示例格式: ["分析各省份的市场表现差异", "查看Top5企业的竞争格局"]
                         """
-                        resp_next = safe_generate(client, MODEL_FAST, prompt_next, "application/json")
+                        resp_next = safe_generate(client, MODEL_SMART, prompt_next, "application/json")
                         next_questions = clean_json_string(resp_next.text)
 
                         if isinstance(next_questions, list) and len(next_questions) > 0:
-                            st.markdown("### 建议追问")
+                            st.markdown("### 是否追问")
                             c1, c2 = st.columns(2)
                             
                             def get_q_text(q):
