@@ -484,7 +484,7 @@ if not st.session_state.messages:
         st.session_state.messages.append({"role": "user", "type": "text", "content": question})
         st.rerun()
     if c1.button("肿瘤产品的市场表现如何，哪些产品在驱动着市场的增长?"): handle_preset("肿瘤产品的市场表现如何，哪些产品在驱动着市场的增长?")
-    if c2.button("查一下K药最近2年的销售额"): handle_preset("查一下K药最近2年的销售额")
+    if c2.button("查一下K药、O药、拓益、艾瑞卡、达伯舒、百泽安这些产品最近2年的销售额、份额、份额变化"): handle_preset("查一下K药、O药、拓益、艾瑞卡、达伯舒、百泽安这些产品最近2年的销售额、份额、份额变化")
     if c3.button("销售额过亿的，独家创新药有哪些，总结一下他们的画像"): handle_preset("销售额过亿的，独家创新药有哪些，总结一下他们的画像")
 
 # --- Input ---
