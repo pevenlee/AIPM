@@ -24,7 +24,7 @@ st.set_page_config(
 )
 
 # --- 模型配置 ---
-MODEL_FAST = "gemini-2.0-flash"        
+MODEL_FAST = "gemini-3.0-flash-preview"        
 MODEL_SMART = "gemini-3-pro-preview"       
 
 # --- 常量定义 ---
@@ -212,15 +212,17 @@ def inject_custom_css():
             border-radius: 0 0 var(--radius-md) var(--radius-md) !important;
         }
 
-        /* 协议卡片 */
+        /* 协议卡片 (四要素版) */
         .protocol-box { 
-            background: #0A0A0A; padding: 12px; border: 1px solid #222; 
+            background: #0F0F0F; padding: 12px; border: 1px solid #333; 
             margin-bottom: 15px; font-size: 12px; 
             text-align: left !important;
             border-radius: var(--radius-md); 
         }
-        .protocol-row { display: flex; justify-content: space-between; border-bottom: 1px dashed #222; padding: 4px 0; }
-        .protocol-key { color: #555; } .protocol-val { color: #CCC; }
+        .protocol-row { display: flex; justify-content: flex-start; border-bottom: 1px solid #222; padding: 6px 0; }
+        .protocol-row:last-child { border-bottom: none; }
+        .protocol-key { color: #666; width: 80px; font-weight: bold; flex-shrink: 0; } 
+        .protocol-val { color: #DDD; word-break: break-all; }
         
         /* 洞察框 */
         .insight-box { 
@@ -377,11 +379,22 @@ def get_history_context(limit=5):
         context_str += f"{role}: {content}\n"
     return context_str
 
+# === 修改：支持四要素展示的协议卡片 ===
 def render_protocol_card(summary):
+    """
+    展示四要素：意图识别、产品/时间范围、计算指标、计算逻辑
+    """
+    intent = summary.get('intent', '-')
+    scope = summary.get('scope', '-')
+    metrics = summary.get('metrics', '-')
+    logic = summary.get('logic', '-')
+    
     st.markdown(f"""
     <div class="protocol-box">
-        <div class="protocol-row"><span class="protocol-key">意图识别</span><span class="protocol-val">{summary.get('intent', '-')}</span></div>
-        <div class="protocol-row"><span class="protocol-key">逻辑策略</span><span class="protocol-val">{summary.get('logic', '-')}</span></div>
+        <div class="protocol-row"><span class="protocol-key">意图识别</span><span class="protocol-val">{intent}</span></div>
+        <div class="protocol-row"><span class="protocol-key">数据范围</span><span class="protocol-val">{scope}</span></div>
+        <div class="protocol-row"><span class="protocol-key">计算指标</span><span class="protocol-val">{metrics}</span></div>
+        <div class="protocol-row"><span class="protocol-key">计算逻辑</span><span class="protocol-val">{logic}</span></div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -567,7 +580,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             # 2. 简单查询
             if 'analysis' not in intent and 'irrelevant' not in intent:
                 with st.spinner("正在生成查询代码，这个过程可能需要1~2分钟，请耐心等待…"):
-                    # --- 优化后的 prompt_code ---
+                    # --- 优化后的 prompt_code：强制输出四要素 ---
                     prompt_code = f"""
                     Role: Python Data Expert (PharmBI).
                     History: {history_str}
@@ -576,19 +589,29 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     
                     CRITICAL RULES:
                     1. **Time Period Consistency**: Check the data range in Context. If calculating Year-over-Year (YoY) growth, ONLY compare the equivalent period (e.g., if data ends 2025-09, compare Jan-Sep 2025 vs Jan-Sep 2024). DO NOT compare a partial year to a full previous year.
-                    2. **Language**: The logic explanation in "intent" and "logic" MUST be in CHINESE (Simplified).
+                    2. **Language**: The logic explanation MUST be in CHINESE (Simplified).
                     3. Code: Use pd.merge if needed. Define all vars. No print/plot. Final result to variable `result`.
                     
-                    Output JSON STRICTLY: {{ "summary": {{ "intent": "数据查询", "logic": "此处用中文解释你的取数逻辑，特别是时间范围的选择..." }}, "code": "..." }}
+                    Output JSON STRICTLY: 
+                    {{ 
+                      "summary": {{ 
+                         "intent": "简单数据查询", 
+                         "scope": "产品: [Product Names], 时间: [YYYY-MM ~ YYYY-MM]",
+                         "metrics": "销售额 / 增长率 / 份额...", 
+                         "logic": "1. 过滤xx产品; 2. 按xx聚合; 3. 计算同比增长..." 
+                      }}, 
+                      "code": "..." 
+                    }}
                     """
                     resp_code = safe_generate(client, MODEL_SMART, prompt_code, "application/json")
                     plan = clean_json_string(resp_code.text)
                 
                 if plan:
                     # [新功能] 打印数据调用逻辑
-                    logic_text = plan.get('summary', {}).get('logic', 'No logic provided')
+                    summary_obj = plan.get('summary', {})
+                    logic_text = summary_obj.get('logic', 'No logic provided')
                     
-                    with st.expander("> 查看思考过程 (THOUGHT PROCESS)", expanded=True): # 默认展开
+                    with st.expander("> 查看思考过程 (THOUGHT PROCESS)", expanded=True): 
                         # 使用 placeholder + simulated_stream 实现带样式的打字机效果
                         logic_placeholder = st.empty()
                         streamed_text = ""
@@ -605,7 +628,9 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                         st.markdown("**生成代码:**")
                         st.code(plan.get('code'), language='python')
 
-                    render_protocol_card(plan.get('summary', {}))
+                    # 渲染四要素卡片
+                    render_protocol_card(summary_obj)
+                    
                     try:
                         exec_ctx = {"df_sales": df_sales, "df_product": df_product}
                         res_raw = safe_exec_code(plan['code'], exec_ctx)
@@ -634,7 +659,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                 shared_ctx = {"df_sales": df_sales.copy(), "df_product": df_product.copy()}
 
                 with st.spinner("正在规划分析路径..."):
-                    # --- 优化后的 prompt_plan ---
+                    # --- 优化后的 prompt_plan：同样要求输出 summary 对象 ---
                     prompt_plan = f"""
                     Role: Senior Pharmaceutical Data Analyst.
                     History: {history_str}
@@ -650,6 +675,12 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     
                     Output JSON STRICTLY (No markdown, no ```json wrapper): 
                     {{ 
+                        "summary": {{ 
+                             "intent": "深度市场分析", 
+                             "scope": "产品: [Product Names], 时间: [YYYY-MM ~ YYYY-MM]",
+                             "metrics": "趋势 / 结构 / 增长驱动力...", 
+                             "logic": "1. 总体趋势分析; 2. 产品结构拆解; 3. 增长贡献度计算..." 
+                        }},
                         "intent_analysis": "这里用中文详细描述你的分析思路，特别是说明你如何处理了时间周期对齐（例如：'鉴于数据截止至2025Q3，我将提取2024同期数据进行同比分析...'）", 
                         "angles": [ 
                             {{ "title": "中文标题", "desc": "中文描述", "code": "Python code storing result in `result` variable..." }} 
@@ -659,7 +690,6 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     resp_plan = safe_generate(client, MODEL_SMART, prompt_plan, "application/json")
                     plan_json = clean_json_string(resp_plan.text)
                 
-                # 增加容错判断
                 if not plan_json:
                     st.error("分析规划生成失败，模型未返回有效格式。")
                     st.stop()
@@ -669,11 +699,15 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     intro_text = plan_json.get('intent_analysis', '分析思路生成中...')
                     intro = f"**分析思路:**\n{intro_text}"
                     
-                    with st.expander("> 查看分析思路 (ANALYSIS THOUGHT)", expanded=True): # 默认展开
+                    with st.expander("> 查看分析思路 (ANALYSIS THOUGHT)", expanded=True): 
                          st.write_stream(simulated_stream(intro))
                     
                     st.session_state.messages.append({"role": "assistant", "type": "text", "content": intro})
                     
+                    # 渲染四要素卡片 (如果有的话)
+                    if 'summary' in plan_json:
+                        render_protocol_card(plan_json['summary'])
+
                     angles_data = []
                     
                     for angle in plan_json.get('angles', []):
@@ -707,7 +741,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                         final_response = st.write_stream(stream_gen)
                         st.session_state.messages.append({"role": "assistant", "type": "text", "content": f"### 分析总结\n{final_response}"})
 
-                        # === Follow-up questions (包含JSON容错修复) ===
+                        # === Follow-up questions ===
                         prompt_next = f"""
                         Based on the analysis above, suggest 2 follow-up questions in Chinese. 
                         Output ONLY a JSON List of strings. 
