@@ -20,7 +20,7 @@ warnings.filterwarnings('ignore')
 st.set_page_config(
     page_title="ChatBI by Pharmcube", 
     layout="wide", 
-    initial_sidebar_state="expanded" # 确保侧边栏默认展开
+    initial_sidebar_state="collapsed" # 默认折叠侧边栏
 )
 
 # --- 模型配置 ---
@@ -58,7 +58,6 @@ def inject_custom_css():
         
         :root {
             --bg-color: #050505;
-            --sidebar-bg: #000000;
             --border-color: #333333;
             --text-primary: #E0E0E0;
             --accent-error: #FF3333;
@@ -123,23 +122,6 @@ def inject_custom_css():
 
         .block-container { padding-top: 80px !important; max-width: 1200px; }
         footer { display: none !important; }
-
-        /* === 侧边栏美化 === */
-        section[data-testid="stSidebar"] {
-            background-color: #000000 !important;
-            border-right: 1px solid #333 !important;
-            box-shadow: 2px 0 10px rgba(0,0,0,0.5) !important;
-        }
-        
-        /* 侧边栏标题样式 */
-        section[data-testid="stSidebar"] h3 {
-            color: #888 !important;
-            font-size: 12px !important;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-top: 10px;
-            margin-bottom: 10px;
-        }
 
         /* === 聊天气泡 & 头像 === */
         [data-testid="stChatMessage"] { background: transparent !important; border: none !important; padding: 10px 0 !important; }
@@ -431,17 +413,6 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 if "messages" not in st.session_state: st.session_state.messages = []
-
-# --- Sidebar (重构版 - 清空内容，仅保留结构) ---
-with st.sidebar:
-    st.markdown("### ChatBI 控制台")
-    st.info("功能区正在开发中...")
-    
-    # 底部清空按钮可以保留，方便调试，不需要的话可以删除
-    st.markdown("<div style='height: 50px;'></div>", unsafe_allow_html=True)
-    if st.button("清除对话记忆", use_container_width=True):
-        st.session_state.messages = []
-        st.rerun()
 
 # --- Chat History ---
 for msg in st.session_state.messages:
