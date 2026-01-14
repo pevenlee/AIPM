@@ -62,7 +62,7 @@ def inject_custom_css():
             --border-color: #333333;
             --text-primary: #E0E0E0;
             --accent-error: #FF3333;
-            --radius-md: 8px; /* [修改] 定义通用圆角变量 */
+            --radius-md: 8px; /* 定义通用圆角变量 */
         }
 
         /* 全局字体 */
@@ -71,10 +71,10 @@ def inject_custom_css():
             background-color: var(--bg-color);
         }
         
-        /* [修改] 全局圆角设置 */
+        /* 全局圆角设置 */
         div, input, select, textarea { border-radius: var(--radius-md) !important; }
         
-        /* [修改] 按钮样式：左对齐 + 圆角 */
+        /* 按钮样式：左对齐 + 圆角 */
         .stButton button {
             border-radius: var(--radius-md) !important;
             text-align: left !important;
@@ -112,7 +112,7 @@ def inject_custom_css():
         .nav-logo-img { height: 28px; width: auto; }
         .nav-logo-text { font-weight: 700; font-size: 18px; color: #FFF; letter-spacing: -0.5px; }
         
-        /* [修改] 右上角头像容器 */
+        /* 右上角头像容器 */
         .nav-right { display: flex; align-items: center; gap: 12px; }
         .user-avatar-circle {
             width: 36px; height: 36px;
@@ -217,7 +217,7 @@ def inject_custom_css():
             background: #0A0A0A; padding: 12px; border: 1px solid #222; 
             margin-bottom: 15px; font-size: 12px; 
             text-align: left !important;
-            border-radius: var(--radius-md); /* [修改] 圆角 */
+            border-radius: var(--radius-md); 
         }
         .protocol-row { display: flex; justify-content: space-between; border-bottom: 1px dashed #222; padding: 4px 0; }
         .protocol-key { color: #555; } .protocol-val { color: #CCC; }
@@ -226,7 +226,7 @@ def inject_custom_css():
         .insight-box { 
             background: #0A0A0A; padding: 15px; border-left: 3px solid #FFF; color: #DDD; margin-top: 10px; 
             text-align: left !important;
-            border-radius: 0 var(--radius-md) var(--radius-md) 0; /* [修改] 圆角 */
+            border-radius: 0 var(--radius-md) var(--radius-md) 0; 
         }
         .mini-insight { color: #666; font-size: 12px; font-style: italic; border-top: 1px solid #222; margin-top: 8px; padding-top: 4px; }
         </style>
@@ -297,7 +297,7 @@ def safe_generate(client, model, prompt, mime_type="text/plain"):
 def stream_generate(client, model, prompt):
     """流式生成内容，用于 st.write_stream 实现打字机效果"""
     try:
-        # 修正点：使用 generate_content_stream 方法，并移除 stream=True 参数
+        # 使用 generate_content_stream 方法
         response = client.models.generate_content_stream(
             model=model, 
             contents=prompt, 
@@ -308,6 +308,12 @@ def stream_generate(client, model, prompt):
                 yield chunk.text
     except Exception as e:
         yield f"Stream Error: {e}"
+
+def simulated_stream(text, speed=0.01):
+    """[新功能] 模拟打字效果生成器，用于将静态文本转为流式"""
+    for word in text:
+        yield word
+        time.sleep(speed)
 
 def format_display_df(df):
     if not isinstance(df, pd.DataFrame): return df
@@ -402,7 +408,6 @@ user_avatar_b64 = get_base64_image(USER_AVATAR)
 if user_avatar_b64:
     user_avatar_html = f'<div class="user-avatar-circle"><img src="data:image/png;base64,{user_avatar_b64}"></div>'
 else:
-    # 默认头像
     user_avatar_html = '<div class="user-avatar-circle" style="color:#FFF; font-size:10px;">User</div>'
 
 st.markdown(f"""
@@ -412,7 +417,7 @@ st.markdown(f"""
         <div class="nav-logo-text">ChatBI</div>
     </div>
     <div class="nav-right">
-        <div class="nav-tag">Peiwen</div>
+        <div class="nav-tag">管理员</div>
         {user_avatar_html}
     </div>
 </div>
@@ -478,7 +483,6 @@ if not st.session_state.messages:
     def handle_preset(question):
         st.session_state.messages.append({"role": "user", "type": "text", "content": question})
         st.rerun()
-    # 按钮内部文字已在 CSS 中强制左对齐
     if c1.button("肿瘤产品的市场表现如何，哪些产品在驱动着市场的增长?"): handle_preset("肿瘤产品的市场表现如何，哪些产品在驱动着市场的增长?")
     if c2.button("查一下K药最近2年的销售额"): handle_preset("查一下K药最近2年的销售额")
     if c3.button("销售额过亿的，独家创新药有哪些，总结一下他们的画像"): handle_preset("销售额过亿的，独家创新药有哪些，总结一下他们的画像")
@@ -551,13 +555,23 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     plan = clean_json_string(resp_code.text)
                 
                 if plan:
-                    with st.expander("> 查看思考过程 (THOUGHT PROCESS)", expanded=False):
-                        st.markdown(f"""
-                        <div class="thought-box">
-                            <span class="thought-header">逻辑推演:</span>
-                            {plan.get('summary', {}).get('logic', 'No logic provided')}
-                        </div>
-                        """, unsafe_allow_html=True)
+                    # [新功能] 打印数据调用逻辑
+                    logic_text = plan.get('summary', {}).get('logic', 'No logic provided')
+                    
+                    with st.expander("> 查看思考过程 (THOUGHT PROCESS)", expanded=True): # 默认展开
+                        # 使用 placeholder + simulated_stream 实现带样式的打字机效果
+                        logic_placeholder = st.empty()
+                        streamed_text = ""
+                        # 模拟流式输出
+                        for chunk in simulated_stream(logic_text):
+                            streamed_text += chunk
+                            logic_placeholder.markdown(f"""
+                            <div class="thought-box">
+                                <span class="thought-header">逻辑推演:</span>
+                                {streamed_text}
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
                         st.markdown("**生成代码:**")
                         st.code(plan.get('code'), language='python')
 
@@ -602,9 +616,14 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     plan_json = clean_json_string(resp_plan.text)
                 
                 if plan_json:
-                    intro = f"**分析思路:**\n{plan_json.get('intent_analysis')}"
-                    with st.expander("> 查看分析思路 (ANALYSIS THOUGHT)", expanded=True):
-                        st.markdown(intro)
+                    # [新功能] 打印分析思路
+                    intro_text = plan_json.get('intent_analysis', '')
+                    intro = f"**分析思路:**\n{intro_text}"
+                    
+                    with st.expander("> 查看分析思路 (ANALYSIS THOUGHT)", expanded=True): # 默认展开
+                         # 直接使用 st.write_stream 配合模拟流
+                         st.write_stream(simulated_stream(intro))
+                    
                     st.session_state.messages.append({"role": "assistant", "type": "text", "content": intro})
                     
                     angles_data = []
@@ -632,21 +651,15 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                                 st.error(f"分析错误: {e}")
 
                     if angles_data:
-                        # [新功能] 流式输出总结
                         st.markdown("### 分析总结")
-                        
                         findings = "\n".join([f"[{a['title']}]: {a['explanation']}" for a in angles_data])
                         prompt_final = f"""Based on findings: {findings}, answer: "{user_query}". Response in Chinese (中文). Professional tone."""
                         
-                        # 调用流式生成器并展示打字机效果
                         stream_gen = stream_generate(client, MODEL_SMART, prompt_final)
                         final_response = st.write_stream(stream_gen)
-                        
-                        # 记录完整回复
                         st.session_state.messages.append({"role": "assistant", "type": "text", "content": f"### 分析总结\n{final_response}"})
 
-                        # === 修复开始：Follow-up questions ===
-                        # 1. 优化 Prompt：强制要求返回字符串列表，给出示例
+                        # === Follow-up questions (包含JSON容错修复) ===
                         prompt_next = f"""
                         Based on the analysis above, suggest 2 follow-up questions in Chinese. 
                         Output ONLY a JSON List of strings. 
@@ -659,24 +672,17 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                             st.markdown("### 建议追问")
                             c1, c2 = st.columns(2)
                             
-                            # 2. 增加容错逻辑：如果模型还是返回了字典，尝试提取文本
                             def get_q_text(q):
-                                if isinstance(q, str): 
-                                    return q
-                                if isinstance(q, dict): 
-                                    # 尝试提取可能的键
-                                    return q.get('question_zh', q.get('question', list(q.values())[0]))
+                                if isinstance(q, str): return q
+                                if isinstance(q, dict): return q.get('question_zh', q.get('question', list(q.values())[0]))
                                 return str(q)
 
-                            # 渲染按钮
                             if len(next_questions) > 0: 
                                 q1_text = get_q_text(next_questions[0])
                                 c1.button(f"> {q1_text}", use_container_width=True, on_click=handle_followup, args=(q1_text,))
-                            
                             if len(next_questions) > 1: 
                                 q2_text = get_q_text(next_questions[1])
                                 c2.button(f"> {q2_text}", use_container_width=True, on_click=handle_followup, args=(q2_text,))
-                        # === 修复结束 ===
             
             elif 'irrelevant' in intent:
                 msg = "该问题似乎与医药数据无关，我是 ChatBI，专注于医药市场分析。"
