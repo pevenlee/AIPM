@@ -25,11 +25,11 @@ st.set_page_config(
 
 # --- 模型配置 ---
 MODEL_FAST = "gemini-2.0-flash"        
-MODEL_SMART = "gemini-3-pro-preview"      
+MODEL_SMART = "gemini-2.0-flash"       
 
 # --- 常量定义 ---
 JOIN_KEY = "药品索引"
-FILE_FACT = "fact.csv"      
+FILE_FACT = "fact.csv"       
 FILE_DIM = "ipmdata.xlsx"
 LOGO_FILE = "logo.png"
 
@@ -40,7 +40,7 @@ BOT_AVATAR = "pmc.png"   # AI头像文件名
 try:
     FIXED_API_KEY = st.secrets["GENAI_API_KEY"]
 except:
-    FIXED_API_KEY = ""
+    FIXED_API_KEY = "" # 请确保这里有你的 API Key 或者通过 st.secrets 配置
 
 # ================= 2. 视觉体系 (Noir UI - 全中文版 - 圆角优化) =================
 
@@ -269,13 +269,33 @@ def load_local_data(filename):
     return None
 
 def get_dataframe_info(df, name="df"):
+    """
+    获取数据表信息，特别是增强了对日期范围的识别，
+    帮助 AI 了解数据的起始和结束时间。
+    """
     if df is None: return f"{name}: NULL"
     info = [f"表名: `{name}` ({len(df)} 行)"]
-    info.append("| 字段 | 类型 | 示例 |")
+    info.append("| 字段 | 类型 | 范围/示例 |")
     info.append("|---|---|---|")
     for col in df.columns:
         dtype = str(df[col].dtype)
-        sample = list(df[col].dropna().unique()[:3])
+        
+        # 特殊处理：如果是日期列，提取起止时间
+        if pd.api.types.is_datetime64_any_dtype(df[col]) or "date" in str(col).lower() or "日期" in str(col):
+            try:
+                # 尝试转为 datetime 以防万一
+                temp_col = pd.to_datetime(df[col], errors='coerce')
+                min_date = temp_col.min()
+                max_date = temp_col.max()
+                if pd.notnull(min_date) and pd.notnull(max_date):
+                    sample = f"{min_date.strftime('%Y-%m-%d')} ~ {max_date.strftime('%Y-%m-%d')}"
+                else:
+                    sample = list(df[col].dropna().unique()[:3])
+            except:
+                sample = list(df[col].dropna().unique()[:3])
+        else:
+            sample = list(df[col].dropna().unique()[:3])
+            
         info.append(f"| {col} | {dtype} | {str(sample)} |")
     return "\n".join(info)
 
@@ -286,6 +306,11 @@ def clean_json_string(text):
         if match:
             try: return json.loads(match.group(0))
             except: pass
+        # 尝试修复列表
+        match_list = re.search(r'\[.*\]', text, re.DOTALL)
+        if match_list:
+             try: return json.loads(match_list.group(0))
+             except: pass
     return None
 
 def safe_generate(client, model, prompt, mime_type="text/plain"):
@@ -297,7 +322,6 @@ def safe_generate(client, model, prompt, mime_type="text/plain"):
 def stream_generate(client, model, prompt):
     """流式生成内容，用于 st.write_stream 实现打字机效果"""
     try:
-        # 使用 generate_content_stream 方法
         response = client.models.generate_content_stream(
             model=model, 
             contents=prompt, 
@@ -310,7 +334,7 @@ def stream_generate(client, model, prompt):
         yield f"Stream Error: {e}"
 
 def simulated_stream(text, speed=0.01):
-    """[新功能] 模拟打字效果生成器，用于将静态文本转为流式"""
+    """模拟打字效果生成器，用于将静态文本转为流式"""
     for word in text:
         yield word
         time.sleep(speed)
@@ -543,13 +567,19 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             # 2. 简单查询
             if 'analysis' not in intent and 'irrelevant' not in intent:
                 with st.spinner("正在生成查询代码，这个过程可能需要1~2分钟，请耐心等待…"):
+                    # --- 优化后的 prompt_code ---
                     prompt_code = f"""
-                    Role: Python Data Expert.
+                    Role: Python Data Expert (PharmBI).
                     History: {history_str}
                     Query: "{user_query}"
                     Context: {context_info}
-                    Rules: pd.merge if needed. Define all vars. No print/plot. Final result to `result`.
-                    Output JSON: {{ "summary": {{ "intent": "数据查询", "logic": "..." }}, "code": "..." }}
+                    
+                    CRITICAL RULES:
+                    1. **Time Period Consistency**: Check the data range in Context. If calculating Year-over-Year (YoY) growth, ONLY compare the equivalent period (e.g., if data ends 2025-09, compare Jan-Sep 2025 vs Jan-Sep 2024). DO NOT compare a partial year to a full previous year.
+                    2. **Language**: The logic explanation in "intent" and "logic" MUST be in CHINESE (Simplified).
+                    3. Code: Use pd.merge if needed. Define all vars. No print/plot. Final result to variable `result`.
+                    
+                    Output JSON STRICTLY: {{ "summary": {{ "intent": "数据查询", "logic": "此处用中文解释你的取数逻辑，特别是时间范围的选择..." }}, "code": "..." }}
                     """
                     resp_code = safe_generate(client, MODEL_SMART, prompt_code, "application/json")
                     plan = clean_json_string(resp_code.text)
@@ -604,24 +634,42 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                 shared_ctx = {"df_sales": df_sales.copy(), "df_product": df_product.copy()}
 
                 with st.spinner("正在规划分析路径..."):
+                    # --- 优化后的 prompt_plan ---
                     prompt_plan = f"""
-                    Role: Senior Analyst.
+                    Role: Senior Pharmaceutical Data Analyst.
                     History: {history_str}
                     Query: "{user_query}"
                     Context: {context_info}
-                    Task: Create 2-3 analysis angles.
-                    Output JSON: {{ "intent_analysis": "...", "angles": [ {{ "title": "...", "desc": "...", "code": "..." }} ] }}
+                    
+                    CRITICAL INSTRUCTIONS:
+                    1. **Data Range Check**: Look at the date range in `Context`. The latest date determines the "Current Period".
+                    2. **Like-for-Like Comparison**: When analyzing growth or trends across years, YOU MUST filter the previous year's data to match the current year's month/quarter range (Year-To-Date logic). 
+                       - Example: If max date is 2025-09-30, "2024 data" for comparison implies 2024-01-01 to 2024-09-30, NOT the full year 2024.
+                    3. **Language**: All "title", "desc", and "intent_analysis" MUST be in SIMPLIFIED CHINESE.
+                    4. **Completeness**: Provide 2-3 distinct analysis angles.
+                    
+                    Output JSON STRICTLY (No markdown, no ```json wrapper): 
+                    {{ 
+                        "intent_analysis": "这里用中文详细描述你的分析思路，特别是说明你如何处理了时间周期对齐（例如：'鉴于数据截止至2025Q3，我将提取2024同期数据进行同比分析...'）", 
+                        "angles": [ 
+                            {{ "title": "中文标题", "desc": "中文描述", "code": "Python code storing result in `result` variable..." }} 
+                        ] 
+                    }}
                     """
                     resp_plan = safe_generate(client, MODEL_SMART, prompt_plan, "application/json")
                     plan_json = clean_json_string(resp_plan.text)
                 
+                # 增加容错判断
+                if not plan_json:
+                    st.error("分析规划生成失败，模型未返回有效格式。")
+                    st.stop()
+
                 if plan_json:
                     # [新功能] 打印分析思路
-                    intro_text = plan_json.get('intent_analysis', '')
+                    intro_text = plan_json.get('intent_analysis', '分析思路生成中...')
                     intro = f"**分析思路:**\n{intro_text}"
                     
                     with st.expander("> 查看分析思路 (ANALYSIS THOUGHT)", expanded=True): # 默认展开
-                         # 直接使用 st.write_stream 配合模拟流
                          st.write_stream(simulated_stream(intro))
                     
                     st.session_state.messages.append({"role": "assistant", "type": "text", "content": intro})
