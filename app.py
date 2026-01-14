@@ -41,7 +41,7 @@ try:
 except:
     FIXED_API_KEY = "" # 请确保这里有你的 API Key 或者通过 st.secrets 配置
 
-# ================= 2. 视觉体系 (Noir UI - 侧边栏兼容版) =================
+# ================= 2. 视觉体系 (Noir UI - 按钮对其修正版) =================
 
 def get_base64_image(image_path):
     """读取本地图片并转为 Base64"""
@@ -89,9 +89,19 @@ def inject_custom_css():
             background: #222 !important;
         }
 
-        /* === 顶部导航栏 (修复侧边栏冲突 & 右上角堆叠) === */
+        /* === 顶部导航栏与按钮对齐修正 === */
         
-        /* 1. 让 Streamlit 原生 Header 浮在最上层，确保按钮可点 */
+        /* 1. 【核心修改】将展开按钮 (>) 下移，与侧边栏内的关闭按钮对齐 */
+        [data-testid="stSidebarCollapsedControl"] {
+            position: fixed !important;
+            top: 70px !important; /* 60px(顶导) + 10px(间距) */
+            left: 20px !important;
+            z-index: 999995 !important; /* 保证浮在内容之上 */
+            background-color: transparent !important;
+            color: #E0E0E0 !important;
+        }
+
+        /* 2. 让 Streamlit 原生 Header 浮在最上层，确保按钮可点 */
         header[data-testid="stHeader"] { 
             background: transparent !important; 
             z-index: 999992 !important;
@@ -103,21 +113,22 @@ def inject_custom_css():
             background: transparent !important;
         }
         
-        /* 2. 自定义顶导样式调整 */
+        /* 3. 自定义顶导样式调整 */
         .fixed-header-container {
             position: fixed; top: 0; left: 0; width: 100%; height: 60px;
             background-color: rgba(5,5,5,0.95);
             border-bottom: 1px solid var(--border-color);
             z-index: 999990; /* 略低于侧边栏和原生Header */
             display: flex; align-items: center; justify-content: space-between;
+            
             /* padding: 上 右 下 左 
-               【关键修改】右侧改为 100px，给 Streamlit 原生菜单按钮留出位置，防止重叠 
-               左侧保持 70px，给侧边栏按钮留位置
+               - 右侧 100px: 避让右上角菜单
+               - 左侧恢复为 24px: 因为展开按钮移下去了，Logo不需要再避让了
             */
-            padding: 0 100px 0 70px; 
+            padding: 0 100px 0 24px; 
         }
         
-        /* 3. 强制提升侧边栏层级，使其能覆盖顶导 */
+        /* 4. 强制提升侧边栏层级，使其能覆盖顶导 */
         section[data-testid="stSidebar"] {
             z-index: 999991 !important;
             padding-top: 60px !important; /* 顶部留白，防止内容被遮挡 */
