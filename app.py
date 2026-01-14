@@ -33,7 +33,7 @@ FILE_FACT = "fact.csv"
 FILE_DIM = "ipmdata.xlsx"
 LOGO_FILE = "logo.png"
 
-# [新功能] 头像定义
+# [头像定义]
 USER_AVATAR = "clt.png"  # 用户头像文件名
 BOT_AVATAR = "pmc.png"   # AI头像文件名
 
@@ -42,10 +42,10 @@ try:
 except:
     FIXED_API_KEY = ""
 
-# ================= 2. 视觉体系 (Noir UI - 全中文版) =================
+# ================= 2. 视觉体系 (Noir UI - 全中文版 - 圆角优化) =================
 
 def get_base64_image(image_path):
-    """读取本地 logo 图片并转为 Base64"""
+    """读取本地图片并转为 Base64"""
     if not os.path.exists(image_path):
         return None
     with open(image_path, "rb") as img_file:
@@ -62,17 +62,40 @@ def inject_custom_css():
             --border-color: #333333;
             --text-primary: #E0E0E0;
             --accent-error: #FF3333;
+            --radius-md: 8px; /* [修改] 定义通用圆角变量 */
         }
 
-        /* 全局字体: 优先使用中文黑体 */
+        /* 全局字体 */
         .stApp, .element-container, .stMarkdown, .stDataFrame, .stButton, div[data-testid="stDataEditor"] {
             font-family: "Microsoft YaHei", "SimHei", 'JetBrains Mono', monospace !important;
             background-color: var(--bg-color);
         }
         
-        div, button, input, select, textarea { border-radius: 0px !important; }
+        /* [修改] 全局圆角设置 */
+        div, input, select, textarea { border-radius: var(--radius-md) !important; }
+        
+        /* [修改] 按钮样式：左对齐 + 圆角 */
+        .stButton button {
+            border-radius: var(--radius-md) !important;
+            text-align: left !important;
+            justify-content: flex-start !important; /* 强制内容左对齐 */
+            padding-left: 15px !important;
+            border: 1px solid #333 !important;
+            background: #111 !important;
+            color: #CCC !important;
+            transition: all 0.2s ease;
+        }
+        .stButton button:hover {
+            border-color: #666 !important;
+            color: #FFF !important;
+            background: #222 !important;
+        }
+        .stButton button p {
+            text-align: left !important; /* 再次强制内部文字左对齐 */
+            font-size: 13px !important;
+        }
 
-        /* === 顶部导航栏 (透明 + Logo) === */
+        /* === 顶部导航栏 === */
         header[data-testid="stHeader"] { background: transparent !important; pointer-events: none; z-index: 90; }
         header[data-testid="stHeader"] > div:first-child { background: transparent; }
 
@@ -88,22 +111,34 @@ def inject_custom_css():
         .nav-left { display: flex; align-items: center; gap: 12px; }
         .nav-logo-img { height: 28px; width: auto; }
         .nav-logo-text { font-weight: 700; font-size: 18px; color: #FFF; letter-spacing: -0.5px; }
-        .nav-right { display: flex; align-items: center; gap: 16px; }
-        .nav-tag { font-size: 10px; border: 1px solid #333; color: #888; padding: 2px 8px; }
+        
+        /* [修改] 右上角头像容器 */
+        .nav-right { display: flex; align-items: center; gap: 12px; }
+        .user-avatar-circle {
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            border: 1px solid #444;
+            overflow: hidden;
+            display: flex; align-items: center; justify-content: center;
+            background: #111;
+        }
+        .user-avatar-circle img { width: 100%; height: 100%; object-fit: cover; }
 
         .block-container { padding-top: 80px !important; max-width: 1200px; }
         footer { display: none !important; }
 
-        /* === 侧边栏按钮位置 (右下角折叠) === */
+        /* === 侧边栏按钮位置 === */
         section[data-testid="stSidebar"] button[kind="header"] {
             position: absolute !important; bottom: 20px !important; right: 20px !important; top: auto !important; left: auto !important;
             background-color: #111 !important; border: 1px solid #333 !important; color: #fff !important;
             width: 32px; height: 32px; z-index: 999999; pointer-events: auto;
+            border-radius: var(--radius-md) !important;
         }
         [data-testid="stSidebarCollapsedControl"] {
             position: fixed !important; bottom: 20px !important; left: 20px !important;
             background-color: #000 !important; border: 1px solid #333 !important; color: #fff !important;
             z-index: 999999;
+            border-radius: var(--radius-md) !important;
         }
 
         /* === 错误提示美化 === */
@@ -111,20 +146,21 @@ def inject_custom_css():
         .custom-error {
             background-color: rgba(40, 0, 0, 0.9); border: 1px solid var(--accent-error); color: #ffcccc;
             padding: 15px; font-size: 13px; margin-bottom: 1rem; display: flex; align-items: center; gap: 10px;
+            border-radius: var(--radius-md);
         }
         .custom-error::before { content: "[错误]"; color: var(--accent-error); font-weight: bold; }
 
         /* === 侧边栏 & 表格 === */
         [data-testid="stSidebar"] { background-color: var(--sidebar-bg); border-right: 1px solid var(--border-color); }
-        [data-testid="stDataFrame"] { background-color: #000 !important; border: 1px solid #333; }
+        [data-testid="stDataFrame"] { background-color: #000 !important; border: 1px solid #333; border-radius: var(--radius-md); }
         
-        /* 侧边栏字段胶囊样式 */
         .field-tag {
             display: inline-block; background: #111; border: 1px solid #333; 
             color: #888; font-size: 10px; padding: 2px 6px; margin: 2px;
+            border-radius: 4px; /* 小圆角 */
         }
 
-        /* === 聊天气泡 & 黑白头像 === */
+        /* === 聊天气泡 & 头像 === */
         [data-testid="stChatMessage"] { background: transparent !important; border: none !important; padding: 10px 0 !important; }
         
         [data-testid="stChatMessageAvatarBackground"] { 
@@ -134,14 +170,9 @@ def inject_custom_css():
             box-shadow: none !important;
             display: flex !important;
         }
-        [data-testid="stChatMessageAvatarBackground"] svg {
-            fill: #ffffff !important; stroke: #ffffff !important;
-        }
-        /* 头像图片适配 */
         .stChatMessage .stChatMessageAvatarImage {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
+            width: 100%; height: 100%; object-fit: cover;
+            border-radius: 50%; /* 头像强制圆形 */
         }
         
         .msg-prefix { font-weight: bold; margin-right: 8px; font-size: 12px; }
@@ -150,54 +181,52 @@ def inject_custom_css():
 
         /* === 底部输入框 === */
         [data-testid="stBottom"] { background: transparent !important; border-top: 1px solid var(--border-color); }
-        .stChatInputContainer textarea { background: #050505 !important; color: #fff !important; border: 1px solid #333 !important; }
+        .stChatInputContainer textarea { 
+            background: #050505 !important; color: #fff !important; 
+            border: 1px solid #333 !important; 
+            border-radius: var(--radius-md) !important;
+        }
         
-        /* === 思考过程展示区 (Thinking Box) - [修改] 左对齐 === */
+        /* === 思考过程 (Thinking Box) === */
         .thought-box {
             font-family: 'JetBrains Mono', "Microsoft YaHei", monospace;
-            font-size: 12px;
-            color: #888;
+            font-size: 12px; color: #888;
             border-left: 2px solid #444;
-            padding-left: 10px;
+            background: #080808; /* 轻微背景色以突显圆角 */
+            padding: 10px;
             margin-bottom: 10px;
             text-align: left !important;
+            border-radius: 0 var(--radius-md) var(--radius-md) 0;
         }
         .thought-header { font-weight: bold; color: #AAA; margin-bottom: 4px; display: block; }
         
-        /* Streamlit Expander 美化 */
+        /* Streamlit Expander */
         .streamlit-expanderHeader {
-            background-color: #0A0A0A !important;
-            color: #888 !important;
-            border: 1px solid #222 !important;
-            font-size: 12px !important;
+            background-color: #0A0A0A !important; color: #888 !important;
+            border: 1px solid #222 !important; font-size: 12px !important;
+            border-radius: var(--radius-md) !important;
         }
         .streamlit-expanderContent {
-            background-color: #050505 !important;
-            border: 1px solid #222 !important;
-            border-top: none !important;
-            color: #CCC !important;
+            background-color: #050505 !important; border: 1px solid #222 !important;
+            border-top: none !important; color: #CCC !important;
+            border-radius: 0 0 var(--radius-md) var(--radius-md) !important;
         }
 
-        /* 协议卡片 - [修改] 左对齐 */
+        /* 协议卡片 */
         .protocol-box { 
-            background: #0A0A0A; 
-            padding: 12px; 
-            border: 1px solid #222; 
-            margin-bottom: 15px; 
-            font-size: 12px; 
+            background: #0A0A0A; padding: 12px; border: 1px solid #222; 
+            margin-bottom: 15px; font-size: 12px; 
             text-align: left !important;
+            border-radius: var(--radius-md); /* [修改] 圆角 */
         }
         .protocol-row { display: flex; justify-content: space-between; border-bottom: 1px dashed #222; padding: 4px 0; }
         .protocol-key { color: #555; } .protocol-val { color: #CCC; }
         
-        /* 洞察框 - [修改] 左对齐 */
+        /* 洞察框 */
         .insight-box { 
-            background: #0A0A0A; 
-            padding: 15px; 
-            border-left: 3px solid #FFF; 
-            color: #DDD; 
-            margin-top: 10px; 
+            background: #0A0A0A; padding: 15px; border-left: 3px solid #FFF; color: #DDD; margin-top: 10px; 
             text-align: left !important;
+            border-radius: 0 var(--radius-md) var(--radius-md) 0; /* [修改] 圆角 */
         }
         .mini-insight { color: #666; font-size: 12px; font-style: italic; border-top: 1px solid #222; margin-top: 8px; padding-top: 4px; }
         </style>
@@ -266,7 +295,7 @@ def safe_generate(client, model, prompt, mime_type="text/plain"):
     except Exception as e: return type('obj', (object,), {'text': f"Error: {e}"})
 
 def stream_generate(client, model, prompt):
-    """[新功能] 流式生成内容，用于 st.write_stream 实现打字机效果"""
+    """流式生成内容，用于 st.write_stream 实现打字机效果"""
     try:
         response = client.models.generate_content(
             model=model, 
@@ -336,7 +365,6 @@ def safe_exec_code(code_str, context):
     try:
         exec(code_str, context)
         if context.get('result') is not None: return context['result']
-        # 启发式查找 DataFrame
         new_vars = set(context.keys()) - pre_vars
         candidates = []
         for var in new_vars:
@@ -347,7 +375,6 @@ def safe_exec_code(code_str, context):
         return None
     except Exception as e: raise e
 
-# [新功能] 获取头像工具函数
 def get_avatar(role):
     """根据角色获取头像，如果图片存在则返回路径，否则返回None"""
     if role == "user":
@@ -363,12 +390,20 @@ client = get_client()
 df_sales = load_local_data(FILE_FACT)
 df_product = load_local_data(FILE_DIM)
 
-# --- Top Nav ---
+# --- Top Nav (修改：右上角改为头像) ---
 logo_b64 = get_base64_image(LOGO_FILE)
 if logo_b64:
     logo_html = f'<img src="data:image/png;base64,{logo_b64}" class="nav-logo-img">'
 else:
     logo_html = """<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M12 2L2 22h20L12 2zm0 3.5L19 20H5l7-14.5z"/></svg>"""
+
+# 处理右上角用户头像
+user_avatar_b64 = get_base64_image(USER_AVATAR)
+if user_avatar_b64:
+    user_avatar_html = f'<div class="user-avatar-circle"><img src="data:image/png;base64,{user_avatar_b64}"></div>'
+else:
+    # 默认头像
+    user_avatar_html = '<div class="user-avatar-circle" style="color:#FFF; font-size:10px;">User</div>'
 
 st.markdown(f"""
 <div class="fixed-header-container">
@@ -378,7 +413,7 @@ st.markdown(f"""
     </div>
     <div class="nav-right">
         <div class="nav-tag">管理员</div>
-        <button style="background:transparent; border:1px solid #333; color:#666; padding:4px 12px; cursor:pointer;" onclick="alert('已退出')">退出系统</button>
+        {user_avatar_html}
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -423,11 +458,9 @@ with st.sidebar:
     
     st.markdown("<div style='height: 50px;'></div>", unsafe_allow_html=True)
 
-# --- Chat History (修改：应用自定义头像) ---
+# --- Chat History ---
 for msg in st.session_state.messages:
-    # 动态获取头像
     avatar_file = get_avatar(msg["role"])
-    
     with st.chat_message(msg["role"], avatar=avatar_file):
         if msg["type"] == "text": 
             role_class = "p-ai" if msg["role"] == "assistant" else "p-user"
@@ -438,13 +471,14 @@ for msg in st.session_state.messages:
         elif msg["type"] == "error":
             st.markdown(f'<div class="custom-error">{msg["content"]}</div>', unsafe_allow_html=True)
 
-# --- 猜你想问 ---
+# --- 猜你想问 (左对齐按钮) ---
 if not st.session_state.messages:
     st.markdown("### 通过与医药魔方交流，开启对医药市场的探索吧！")
     c1, c2, c3 = st.columns(3)
     def handle_preset(question):
         st.session_state.messages.append({"role": "user", "type": "text", "content": question})
         st.rerun()
+    # 按钮内部文字已在 CSS 中强制左对齐
     if c1.button("肿瘤产品的市场表现如何，哪些产品在驱动着市场的增长?"): handle_preset("肿瘤产品的市场表现如何，哪些产品在驱动着市场的增长?")
     if c2.button("查一下K药最近2年的销售额"): handle_preset("查一下K药最近2年的销售额")
     if c3.button("销售额过亿的，独家创新药有哪些，总结一下他们的画像"): handle_preset("销售额过亿的，独家创新药有哪些，总结一下他们的画像")
@@ -462,7 +496,6 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
         user_query = st.session_state.messages[-1]["content"]
         history_str = get_history_context(limit=5)
 
-        # 修改：使用 AI 头像
         with st.chat_message("assistant", avatar=get_avatar("assistant")):
             if df_sales is None or df_product is None:
                 err_text = f"数据源缺失。请检查侧边栏路径诊断。 (需要文件: {FILE_FACT}, {FILE_DIM})"
@@ -481,19 +514,15 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             
             with st.status("正在分析意图...", expanded=False) as status:
                 prompt_router = f"""
-                Classify intent of the query based on context.
+                Classify intent based on context.
                 History: {history_str}
                 Query: "{user_query}"
-                
                 Rules:
-                1. If user asks for specific numbers, data, lists, or facts -> "inquiry"
-                2. If user asks for reasons, trends, causes, or complex breakdown -> "analysis"
-                3. If unrelated -> "irrelevant"
-                
-                Output JSON: {{ "type": "result_value" }} 
-                (result_value must be exactly one of: "inquiry", "analysis", "irrelevant")
+                1. Specific numbers/data -> "inquiry"
+                2. Trends/reasons/breakdown -> "analysis"
+                3. Unrelated -> "irrelevant"
+                Output JSON: {{ "type": "result_value" }} (one of: "inquiry", "analysis", "irrelevant")
                 """
-                
                 resp = safe_generate(client, MODEL_FAST, prompt_router, "application/json")
                 
                 if "Error" in resp.text:
@@ -502,11 +531,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                 
                 cleaned_data = clean_json_string(resp.text)
                 if cleaned_data:
-                    raw_intent = cleaned_data.get('type', 'inquiry')
-                    intent = str(raw_intent).lower().strip()
-                else:
-                    intent = "inquiry"
-
+                    intent = str(cleaned_data.get('type', 'inquiry')).lower().strip()
                 status.update(label=f"意图: {intent.upper()}", state="complete")
 
             # ================= 逻辑分流 =================
@@ -520,8 +545,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     Query: "{user_query}"
                     Context: {context_info}
                     Rules: pd.merge if needed. Define all vars. No print/plot. Final result to `result`.
-                    Output JSON (Translate summary values to Chinese): 
-                    {{ "summary": {{ "intent": "数据查询", "logic": "..." }}, "code": "..." }}
+                    Output JSON: {{ "summary": {{ "intent": "数据查询", "logic": "..." }}, "code": "..." }}
                     """
                     resp_code = safe_generate(client, MODEL_SMART, prompt_code, "application/json")
                     plan = clean_json_string(resp_code.text)
@@ -548,7 +572,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                             st.dataframe(formatted_df, use_container_width=True)
                             st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
                         else:
-                            st.warning("无精确匹配，尝试模糊搜索...")
+                            st.warning("尝试模糊搜索...")
                             fallback_code = f"result = df_product[df_product.astype(str).apply(lambda x: x.str.contains('{user_query[:2]}', case=False, na=False)).any(axis=1)].head(10)"
                             try:
                                 res_fallback = safe_exec_code(fallback_code, exec_ctx)
@@ -561,7 +585,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     except Exception as e:
                         st.markdown(f'<div class="custom-error">代码执行错误: {e}</div>', unsafe_allow_html=True)
 
-            # 3. 深度分析 (修改：流式输出)
+            # 3. 深度分析
             elif 'analysis' in intent:
                 shared_ctx = {"df_sales": df_sales.copy(), "df_product": df_product.copy()}
 
@@ -572,18 +596,15 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     Query: "{user_query}"
                     Context: {context_info}
                     Task: Create 2-3 analysis angles.
-                    Output JSON (Use Chinese for title/desc/intent_analysis): 
-                    {{ "intent_analysis": "...", "angles": [ {{ "title": "...", "desc": "...", "code": "..." }} ] }}
+                    Output JSON: {{ "intent_analysis": "...", "angles": [ {{ "title": "...", "desc": "...", "code": "..." }} ] }}
                     """
                     resp_plan = safe_generate(client, MODEL_SMART, prompt_plan, "application/json")
                     plan_json = clean_json_string(resp_plan.text)
                 
                 if plan_json:
                     intro = f"**分析思路:**\n{plan_json.get('intent_analysis')}"
-                    
                     with st.expander("> 查看分析思路 (ANALYSIS THOUGHT)", expanded=True):
                         st.markdown(intro)
-                    
                     st.session_state.messages.append({"role": "assistant", "type": "text", "content": intro})
                     
                     angles_data = []
@@ -611,17 +632,12 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                                 st.error(f"分析错误: {e}")
 
                     if angles_data:
-                        # [新功能] 流式输出总结
                         st.markdown("### 分析总结")
-                        
                         findings = "\n".join([f"[{a['title']}]: {a['explanation']}" for a in angles_data])
                         prompt_final = f"""Based on findings: {findings}, answer: "{user_query}". Response in Chinese (中文). Professional tone."""
                         
-                        # 调用流式生成器并展示打字机效果
                         stream_gen = stream_generate(client, MODEL_SMART, prompt_final)
                         final_response = st.write_stream(stream_gen)
-                        
-                        # 记录完整回复
                         st.session_state.messages.append({"role": "assistant", "type": "text", "content": f"### 分析总结\n{final_response}"})
 
                         # Follow-up questions
@@ -632,6 +648,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                         if isinstance(next_questions, list) and len(next_questions) > 0:
                             st.markdown("### 建议追问")
                             c1, c2 = st.columns(2)
+                            # 按钮已在 CSS 强制左对齐
                             if len(next_questions) > 0: c1.button(f"> {next_questions[0]}", use_container_width=True, on_click=handle_followup, args=(next_questions[0],))
                             if len(next_questions) > 1: c2.button(f"> {next_questions[1]}", use_container_width=True, on_click=handle_followup, args=(next_questions[1],))
             
