@@ -838,6 +838,9 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     3. **代码安全**: 绝对禁止 `df = df.func(inplace=True)` 这种写法，这会导致 DataFrame 变成 NoneType 引发合并错误。
                     4. **语言**: 所有的 "title" (标题), "desc" (描述), 和 "intent_analysis" (分析思路) 必须使用**简体中文**。
                     5. **完整性**: 提供 2-3 个不同的分析维度。
+                    6. **变量定义检查 (CRITICAL)**: 
+                        - **严禁引用未定义的变量**（例如代码中出现了 `df_excl` 或 `df_temp` 但前面没有定义它）。
+                        - 凡是使用的变量，必须在当前代码块中显式赋值。
                     
                     严格输出 JSON (不要Markdown, 不要代码块): 
                     {{ 
