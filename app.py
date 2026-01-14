@@ -774,12 +774,26 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                             # [新增功能 START] 2. Smart 模型生成追问
                             # ==========================================
                             try:
+                                # 1. 获取所有可用字段名
+                                all_columns = []
+                                if df_sales is not None: all_columns.extend(df_sales.columns.tolist())
+                                if df_product is not None: all_columns.extend(df_product.columns.tolist())
+                                # 去重并转为字符串
+                                cols_str = ", ".join(list(set(all_columns)))
+
+                                # 2. 构建包含字段信息的提示词
                                 prompt_next = f"""
-                                基于生产的表格和洞察，结合数据库有的字段："{user_query}"，
-                                给出两个客户最想深入挖掘的2个问题。
+                                基于生成的表格数据和洞察。
+                                
+                                【数据库完整可用字段列表】:
+                                {cols_str}
+                                
+                                【指令】
+                                针对用户的问题 "{user_query}"，从上面的“可用字段列表”中寻找灵感，
+                                给出客户最可能想深入挖掘的 2 个问题（例如：按[某个具体字段]拆分、看[某个字段]的趋势等）。
                                 
                                 严格输出 JSON 字符串列表。
-                                示例格式: ["为什么2024年份额下降了?", "查看该产品的分医院排名"]
+                                示例格式: ["查看该产品的分医院排名", "分析不同剂型的份额变化"]
                                 """
                                 resp_next = safe_generate(client, MODEL_SMART, prompt_next, "application/json")
                                 next_questions = clean_json_string(resp_next.text)
@@ -931,10 +945,23 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
 
                         # === Follow-up questions ===
                         # [中文提示词] 追问生成
+                        
+                        # 1. 获取字段上下文
+                        all_columns = []
+                        if df_sales is not None: all_columns.extend(df_sales.columns.tolist())
+                        if df_product is not None: all_columns.extend(df_product.columns.tolist())
+                        cols_str = ", ".join(list(set(all_columns)))
+
                         prompt_next = f"""
-                        基于生产的表格和洞察，结合数据库有的字段。
+                        基于生成的表格和洞察。
+                        
+                        【数据库完整可用字段列表】:
+                        {cols_str}
+                        
+                        【指令】
+                        结合“可用字段列表”，生成 2 个具有深度的后续分析问题。
                         仅输出一个 JSON 字符串列表。
-                        示例格式: ["第一个问题是什么?", "第二个问题是什么?"]
+                        示例格式: ["分析各省份的市场表现差异", "查看Top5企业的竞争格局"]
                         """
                         resp_next = safe_generate(client, MODEL_FAST, prompt_next, "application/json")
                         next_questions = clean_json_string(resp_next.text)
