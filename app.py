@@ -42,7 +42,7 @@ try:
 except:
     FIXED_API_KEY = "" # 请确保这里有你的 API Key 或者通过 st.secrets 配置
 
-# ================= 2. 视觉体系 (Noir UI - 全中文版 - 按钮位置优化) =================
+# ================= 2. 视觉体系 (Noir UI - 强力修复版) =================
 
 def get_base64_image(image_path):
     """读取本地图片并转为 Base64"""
@@ -96,7 +96,11 @@ def inject_custom_css():
         }
 
         /* === 顶部导航栏 === */
-        header[data-testid="stHeader"] { background: transparent !important; pointer-events: none; z-index: 90; }
+        header[data-testid="stHeader"] { 
+            background: transparent !important; 
+            z-index: 10 !important;
+            /* 移除 pointer-events: none 以防止某些交互被阻断 */
+        }
         header[data-testid="stHeader"] > div:first-child { background: transparent; }
 
         .fixed-header-container {
@@ -127,34 +131,41 @@ def inject_custom_css():
         .block-container { padding-top: 80px !important; max-width: 1200px; }
         footer { display: none !important; }
 
-        /* === 侧边栏控制按钮 (解决被遮挡问题) === */
-        
-       /* === 侧边栏控制按钮 (强力修复版) === */
+        /* === 侧边栏控制按钮 (强力修复版) === */
         
         /* 1. [关键] 展开按钮 (当侧边栏收起时显示) */
-        /* 兼容不同版本的 Streamlit 选择器 */
         [data-testid="stSidebarCollapsedControl"], 
         div[data-testid="stSidebarCollapsedControl"],
         button[data-testid="stSidebarCollapsedControl"] {
             display: flex !important;
             visibility: visible !important;
+            opacity: 1 !important;
+            
+            /* 强制位置：避开底部的 ChatInput (高度通常约 80px) */
             position: fixed !important;
             left: 20px !important;
-            bottom: 20px !important;
-            top: auto !important; /* 强制覆盖默认的 top 定位 */
+            bottom: 100px !important; /* <--- 关键修改：从 20px 提到 100px */
+            top: auto !important;
             right: auto !important;
             
-            z-index: 9999999 !important; /* 极高的层级，确保不被任何东西遮挡 */
+            /* 层级：必须高于 ChatInput (stBottom 通常是 z-index 100) */
+            z-index: 2147483647 !important; 
             
+            /* 样式：高亮显示 */
             background-color: #111 !important;
             color: #fff !important;
-            border: 2px solid #666 !important; /* 加粗边框以便发现 */
+            border: 2px solid #666 !important;
             border-radius: 50% !important;
             width: 44px !important;
             height: 44px !important;
             
             /* 阴影让它浮起来 */
-            box-shadow: 0 0 10px rgba(0,0,0,0.5) !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+            
+            /* 交互：强制开启点击 */
+            pointer-events: auto !important;
+            cursor: pointer !important;
+            transition: transform 0.3s ease !important;
         }
 
         /* hover 效果 */
@@ -821,7 +832,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                             st.markdown(f"**> {angle['title']}**")
                             try:
                                 res_raw = safe_exec_code(angle['code'], shared_ctx)
-                                # --- 修复点：调整了下方 if 的缩进，使其与上一行对齐 ---
+                                # [关键修复]：确保此处的 if 语句缩进正确，并且逻辑完整
                                 if isinstance(res_raw, dict) and any(isinstance(v, (pd.DataFrame, pd.Series)) for v in res_raw.values()):
                                     res_df = pd.DataFrame() # 初始化为空，避免后面报错
                                     # 遍历字典，逐个展示
