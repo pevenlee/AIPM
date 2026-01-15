@@ -656,7 +656,7 @@ if not st.session_state.messages:
     def handle_preset(question):
         st.session_state.messages.append({"role": "user", "type": "text", "content": question})
         st.rerun()
-    if c1.button("☑︎ 第十一批集采对哪些中国医药市场产生了什么样的影响？"): handle_preset("第十一批集采对哪些中国医药市场产生了什么样的影响？")
+    if c1.button("☑︎ 第十一批集采对中国医药市场院内外产生了什么样的影响？"): handle_preset("第十一批集采对中国医药市场院内外产生了什么样的影响？")
     if c2.button("☑︎ K药、O药、拓益、艾瑞卡、达伯舒、百泽安最近2年的销售额、份额、份额变化"): handle_preset("K药、O药、拓益、艾瑞卡、达伯舒、百泽安最近2年的销售额、份额、份额变化")
     if c3.button("☑︎ 销售额过亿的，独家处方药有哪些，总结一下他们的画像"): handle_preset("销售额过亿的，独家处方药有哪些，总结一下他们的画像")
 
