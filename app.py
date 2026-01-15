@@ -68,38 +68,46 @@ def generate_pdf_report(history_messages):
     将对话历史转换为 PDF 二进制流
     """
     pdf = PDF()
-    pdf.add_page()
     
-    # 1. 注册中文字体
-    # 如果找不到 SimHei.ttf，尝试寻找系统字体或报错
+    # ================= [关键修改] =================
+    # 必须在 add_page() 之前注册字体，
+    # 否则 header() 执行时会因为找不到字体而报错
+    # ============================================
+
+    # 1. 寻找并注册中文字体
     font_name = 'ChineseFont'
+    current_font_path = FONT_PATH
     
     # 检查字体文件是否存在
-    current_font_path = FONT_PATH
     if not os.path.exists(current_font_path):
-        # 简单的回退机制 (仅限 Windows 本地调试)
+        # Windows 本地调试回退机制
         if os.path.exists("C:\\Windows\\Fonts\\msyh.ttf"):
             current_font_path = "C:\\Windows\\Fonts\\msyh.ttf"
         else:
-            # 如果真的找不到字体，直接返回 None，UI层提示错误
             return None
 
     try:
+        # 先注册字体
         pdf.add_font(font_name, '', current_font_path)
-        pdf.font_family_name = font_name # 保存字体名给 header/footer 用
+        # 设置自定义属性供 header 使用
+        pdf.font_family_name = font_name 
+        # 设置正文默认字体
         pdf.set_font(font_name, '', 12)
     except Exception as e:
         print(f"Font Load Error: {e}")
         return None
     
-    # 2. 遍历消息
+    # 2. 字体准备好后，再添加页面 (这时候 header() 就能正常运行了)
+    pdf.add_page()
+    
+    # 3. 遍历消息
     for msg in history_messages:
         role = msg.get("role")
         content = msg.get("content")
         msg_type = msg.get("type")
-        is_thought = msg.get("is_thought", False) # 获取标记
+        is_thought = msg.get("is_thought", False)
         
-        # [核心逻辑] 过滤掉错误信息和“思考过程”
+        # 过滤
         if msg_type == "error": continue
         if is_thought: continue
         
@@ -107,14 +115,12 @@ def generate_pdf_report(history_messages):
         if role == "user":
             pdf.ln(5)
             pdf.set_font(font_name, '', 14)
-            pdf.set_text_color(0, 0, 0) # 黑色
-            # Multi_cell 处理自动换行
+            pdf.set_text_color(0, 0, 0)
             try:
                 pdf.multi_cell(0, 8, f"问题: {str(content)}")
             except:
                 pdf.multi_cell(0, 8, "问题: [内容无法渲染]")
             pdf.ln(2)
-            # 画一条线分割
             pdf.set_draw_color(200, 200, 200)
             pdf.line(pdf.get_x(), pdf.get_y(), 210 - pdf.get_x(), pdf.get_y())
             pdf.ln(5)
@@ -122,12 +128,10 @@ def generate_pdf_report(history_messages):
         # --- 渲染 AI 回复 ---
         elif role == "assistant":
             pdf.set_font(font_name, '', 11)
-            pdf.set_text_color(50, 50, 50) # 深灰
+            pdf.set_text_color(50, 50, 50)
             
             if msg_type == "text":
-                # 简单清洗 Markdown
                 clean_text = str(content).replace("**", "").replace("### ", "").replace("## ", "")
-                # 处理不支持的字符 (简单替换)
                 try:
                     pdf.multi_cell(0, 6, clean_text)
                 except:
@@ -135,39 +139,31 @@ def generate_pdf_report(history_messages):
                 pdf.ln(3)
                 
             elif msg_type == "df":
-                # --- 渲染表格 ---
                 df = content
                 if isinstance(df, pd.DataFrame) and not df.empty:
                     pdf.ln(2)
                     pdf.set_font(font_name, '', 8)
-                    
                     try:
-                        # 转换所有数据为字符串，防止 fpdf 报错
                         df_str = df.astype(str)
                         with pdf.table() as table:
-                            # 表头
                             row = table.row()
                             for col_name in df_str.columns:
                                 row.cell(str(col_name))
-                            # 数据行 (限制前 50 行防止 PDF 过大)
                             for _, data_row in df_str.head(50).iterrows():
                                 row = table.row()
                                 for item in data_row:
                                     row.cell(str(item))
-                        
                         if len(df) > 50:
                             pdf.cell(0, 5, f"... (仅展示前 50 行，共 {len(df)} 行)")
                             pdf.ln()
-
                     except Exception as e:
                         pdf.set_text_color(255, 0, 0)
                         pdf.multi_cell(0, 5, f"[表格渲染失败: {str(e)}]")
                         pdf.set_text_color(50, 50, 50)
                     
                     pdf.ln(5)
-                    pdf.set_font(font_name, '', 11) # 恢复字体
+                    pdf.set_font(font_name, '', 11)
 
-    # 返回二进制数据
     return bytes(pdf.output())
 
 # ================= 3. 视觉体系 (Noir UI) =================
