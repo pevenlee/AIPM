@@ -7,12 +7,10 @@ import re
 import numpy as np
 import base64
 import time
-# 确保你已经安装了库
-# pip install google-genai fpdf2 openpyxl
+# 确保你已经安装了 google-genai 库
+# pip install google-genai
 from google import genai
 from google.genai import types
-from fpdf import FPDF
-from fpdf.fonts import FontFace
 
 # 忽略无关警告
 warnings.filterwarnings('ignore')
@@ -26,14 +24,13 @@ st.set_page_config(
 
 # --- 模型配置 ---
 MODEL_FAST = "gemini-2.0-flash"        
-MODEL_SMART = "gemini-3-pro-preview"       
+MODEL_SMART = "gemini-3-pro-preview"        
 
 # --- 常量定义 ---
 JOIN_KEY = "药品索引"
 FILE_FACT = "fact.csv"        
 FILE_DIM = "ipmdata.xlsx"
 LOGO_FILE = "logo.png"
-FONT_PATH = "SimHei.ttf" # 【重要】请确保同级目录下有此字体文件
 
 # [头像定义]
 USER_AVATAR = "clt.png"  # 用户头像文件名
@@ -42,131 +39,9 @@ BOT_AVATAR = "pmc.png"   # AI头像文件名
 try:
     FIXED_API_KEY = st.secrets["GENAI_API_KEY"]
 except:
-    FIXED_API_KEY = "" # 如果本地运行，请在这里填入 "AIzaSy..."
+    FIXED_API_KEY = "" # 请确保这里有你的 API Key 或者通过 st.secrets 配置
 
-# ================= 2. PDF 生成工具 (新增) =================
-
-class PDF(FPDF):
-    def header(self):
-        # 简单的页眉
-        if hasattr(self, 'font_family_name'):
-            self.set_font(self.font_family_name, '', 10)
-        self.set_text_color(128)
-        self.cell(0, 10, 'ChatBI Analysis Report', align='R', new_x="LMARGIN", new_y="NEXT")
-        self.ln(5)
-
-    def footer(self):
-        # 页脚页码
-        self.set_y(-15)
-        if hasattr(self, 'font_family_name'):
-            self.set_font(self.font_family_name, '', 8)
-        self.set_text_color(128)
-        self.cell(0, 10, f'Page {self.page_no()}', align='C')
-
-def generate_pdf_report(history_messages):
-    """
-    将对话历史转换为 PDF 二进制流
-    """
-    pdf = PDF()
-    
-    # ================= [关键修改] =================
-    # 必须在 add_page() 之前注册字体，
-    # 否则 header() 执行时会因为找不到字体而报错
-    # ============================================
-
-    # 1. 寻找并注册中文字体
-    font_name = 'ChineseFont'
-    current_font_path = FONT_PATH
-    
-    # 检查字体文件是否存在
-    if not os.path.exists(current_font_path):
-        # Windows 本地调试回退机制
-        if os.path.exists("C:\\Windows\\Fonts\\msyh.ttf"):
-            current_font_path = "C:\\Windows\\Fonts\\msyh.ttf"
-        else:
-            return None
-
-    try:
-        # 先注册字体
-        pdf.add_font(font_name, '', current_font_path)
-        # 设置自定义属性供 header 使用
-        pdf.font_family_name = font_name 
-        # 设置正文默认字体
-        pdf.set_font(font_name, '', 12)
-    except Exception as e:
-        print(f"Font Load Error: {e}")
-        return None
-    
-    # 2. 字体准备好后，再添加页面 (这时候 header() 就能正常运行了)
-    pdf.add_page()
-    
-    # 3. 遍历消息
-    for msg in history_messages:
-        role = msg.get("role")
-        content = msg.get("content")
-        msg_type = msg.get("type")
-        is_thought = msg.get("is_thought", False)
-        
-        # 过滤
-        if msg_type == "error": continue
-        if is_thought: continue
-        
-        # --- 渲染用户提问 ---
-        if role == "user":
-            pdf.ln(5)
-            pdf.set_font(font_name, '', 14)
-            pdf.set_text_color(0, 0, 0)
-            try:
-                pdf.multi_cell(0, 8, f"问题: {str(content)}")
-            except:
-                pdf.multi_cell(0, 8, "问题: [内容无法渲染]")
-            pdf.ln(2)
-            pdf.set_draw_color(200, 200, 200)
-            pdf.line(pdf.get_x(), pdf.get_y(), 210 - pdf.get_x(), pdf.get_y())
-            pdf.ln(5)
-
-        # --- 渲染 AI 回复 ---
-        elif role == "assistant":
-            pdf.set_font(font_name, '', 11)
-            pdf.set_text_color(50, 50, 50)
-            
-            if msg_type == "text":
-                clean_text = str(content).replace("**", "").replace("### ", "").replace("## ", "")
-                try:
-                    pdf.multi_cell(0, 6, clean_text)
-                except:
-                    pdf.multi_cell(0, 6, "[文本包含无法渲染的字符]")
-                pdf.ln(3)
-                
-            elif msg_type == "df":
-                df = content
-                if isinstance(df, pd.DataFrame) and not df.empty:
-                    pdf.ln(2)
-                    pdf.set_font(font_name, '', 8)
-                    try:
-                        df_str = df.astype(str)
-                        with pdf.table() as table:
-                            row = table.row()
-                            for col_name in df_str.columns:
-                                row.cell(str(col_name))
-                            for _, data_row in df_str.head(50).iterrows():
-                                row = table.row()
-                                for item in data_row:
-                                    row.cell(str(item))
-                        if len(df) > 50:
-                            pdf.cell(0, 5, f"... (仅展示前 50 行，共 {len(df)} 行)")
-                            pdf.ln()
-                    except Exception as e:
-                        pdf.set_text_color(255, 0, 0)
-                        pdf.multi_cell(0, 5, f"[表格渲染失败: {str(e)}]")
-                        pdf.set_text_color(50, 50, 50)
-                    
-                    pdf.ln(5)
-                    pdf.set_font(font_name, '', 11)
-
-    return bytes(pdf.output())
-
-# ================= 3. 视觉体系 (Noir UI) =================
+# ================= 2. 视觉体系 (Noir UI - 侧边栏升级版) =================
 
 def get_base64_image(image_path):
     """读取本地图片并转为 Base64"""
@@ -185,17 +60,20 @@ def inject_custom_css():
             --border-color: #333333;
             --text-primary: #E0E0E0;
             --accent-error: #FF3333;
-            --radius-md: 8px; 
-            --header-height: 60px; 
+            --radius-md: 8px; /* 定义通用圆角变量 */
+            --header-height: 60px; /* 统一定义顶导高度 */
         }
 
+        /* 全局字体 */
         .stApp, .element-container, .stMarkdown, .stDataFrame, .stButton, div[data-testid="stDataEditor"] {
             font-family: "Microsoft YaHei", "SimHei", 'JetBrains Mono', monospace !important;
             background-color: var(--bg-color);
         }
         
+        /* 全局圆角设置 */
         div, input, select, textarea { border-radius: var(--radius-md) !important; }
         
+        /* 按钮样式 */
         .stButton button {
             border-radius: var(--radius-md) !important;
             text-align: left !important;
@@ -212,32 +90,38 @@ def inject_custom_css():
             background: #222 !important;
         }
 
-        /* 顶部导航栏 */
+        /* === 布局核心修正 === */
+        
+        /* 1. 顶部导航栏 (最高层级) */
         .fixed-header-container {
             position: fixed; top: 0; left: 0; width: 100%; height: var(--header-height);
             background-color: rgba(5,5,5,0.95);
             border-bottom: 1px solid var(--border-color);
             z-index: 999999 !important; 
             display: flex; align-items: center; justify-content: space-between;
-            padding: 0 24px;
+            
+            /* --- CHANGE THIS LINE --- */
+            /* Old: padding: 0 100px 0 24px; */
+            padding: 0 24px; /* Changed right padding from 100px to 24px */
         }
 
-        /* 侧边栏容器 */
+        /* 2. 侧边栏容器 (下沉到顶导下方) */
         section[data-testid="stSidebar"] {
-            top: var(--header-height) !important;
-            height: calc(100vh - var(--header-height)) !important;
-            z-index: 999998 !important;
+            top: var(--header-height) !important; /* 顶部距离 = 顶导高度 */
+            height: calc(100vh - var(--header-height)) !important; /* 高度 = 屏幕 - 顶导 */
+            z-index: 999998 !important; /* 层级略低于顶导 */
             background-color: #0A0A0A !important; 
             border-right: 1px solid #333;
             padding-top: 20px !important; 
             box-shadow: 2px 0 10px rgba(0,0,0,0.3);
         }
         
+        /* 3. 展开按钮 (Collapsed Control) 位置修正 */
         [data-testid="stSidebarCollapsedControl"] {
             position: fixed !important;
-            top: 75px !important; 
+            top: 75px !important; /* 60px(顶导) + 15px(间距) */
             left: 20px !important;
-            z-index: 1000000 !important;
+            z-index: 1000000 !important; /* 比顶导还要高，确保能点到 */
             background-color: transparent !important;
             color: #E0E0E0 !important;
             display: block !important; 
@@ -248,6 +132,7 @@ def inject_custom_css():
             color: #E0E0E0 !important;
         }
 
+        /* 4. Streamlit 原生 Header (透明化并置顶) */
         header[data-testid="stHeader"] { 
             background: transparent !important; 
             z-index: 999999 !important; 
@@ -257,31 +142,59 @@ def inject_custom_css():
             background: transparent !important;
         }
         
-        /* 侧边栏 Chips */
+        /* === 5. [新增] 侧边栏数据字典样式 (Chips) === */
         .dict-category {
-            font-size: 13px; font-weight: 700; color: #888;
-            margin-top: 20px; margin-bottom: 8px;
-            text-transform: uppercase; letter-spacing: 0.5px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #888;
+            margin-top: 20px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
-        .chip-container { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+        
+        .chip-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+        
         .field-chip {
-            display: inline-flex; align-items: center;
-            background-color: #1A1A1A; border: 1px solid #333;
-            border-radius: 6px; padding: 4px 8px;
-            font-size: 11px; color: #CCC;
-            font-family: 'JetBrains Mono', monospace; transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            background-color: #1A1A1A;
+            border: 1px solid #333;
+            border-radius: 6px; /* 圆角矩阵 */
+            padding: 4px 8px;
+            font-size: 11px;
+            color: #CCC;
+            font-family: 'JetBrains Mono', monospace;
+            transition: all 0.2s;
         }
-        .field-chip:hover { border-color: #555; color: #FFF; background-color: #222; }
-        .field-chip.highlight { border-color: #444; background-color: #181818; color: #4CAF50; }
+        .field-chip:hover {
+            border-color: #555;
+            color: #FFF;
+            background-color: #222;
+        }
+        .field-chip.highlight {
+            border-color: #444;
+            background-color: #181818;
+            color: #4CAF50; /* 绿色高亮 */
+        }
+        
+        /* --- 其他样式 --- */
         
         .nav-left { display: flex; align-items: center; gap: 12px; }
         .nav-logo-img { height: 28px; width: auto; }
         .nav-logo-text { font-weight: 700; font-size: 18px; color: #FFF; letter-spacing: -0.5px; }
-        .nav-right { display: flex; align-items: center; gap: 12px; }
         
+        .nav-right { display: flex; align-items: center; gap: 12px; }
         .user-avatar-circle {
-            width: 36px; height: 36px; border-radius: 50%;
-            border: 1px solid #444; overflow: hidden;
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            border: 1px solid #444;
+            overflow: hidden;
             display: flex; align-items: center; justify-content: center;
             background: #111;
         }
@@ -290,7 +203,9 @@ def inject_custom_css():
         .block-container { padding-top: 80px !important; max-width: 1200px; }
         footer { display: none !important; }
 
+        /* === 聊天气泡 & 头像 === */
         [data-testid="stChatMessage"] { background: transparent !important; border: none !important; padding: 10px 0 !important; }
+        
         [data-testid="stChatMessageAvatarBackground"] { 
             background-color: #000000 !important; 
             border: 1px solid #ffffff !important;
@@ -298,12 +213,16 @@ def inject_custom_css():
             box-shadow: none !important;
             display: flex !important;
         }
-        .stChatMessage .stChatMessageAvatarImage { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+        .stChatMessage .stChatMessageAvatarImage {
+            width: 100%; height: 100%; object-fit: cover;
+            border-radius: 50%;
+        }
         
         .msg-prefix { font-weight: bold; margin-right: 8px; font-size: 12px; }
         .p-user { color: #888; }
         .p-ai { color: #00FF00; }
 
+        /* === 底部输入框 === */
         [data-testid="stBottom"] { background: transparent !important; border-top: 1px solid var(--border-color); }
         .stChatInputContainer textarea { 
             background: #050505 !important; color: #fff !important; 
@@ -311,15 +230,19 @@ def inject_custom_css():
             border-radius: var(--radius-md) !important;
         }
         
+        /* === 思考过程 (Thinking Box) === */
         .thought-box {
             font-family: 'JetBrains Mono', "Microsoft YaHei", monospace;
             font-size: 12px; color: #888;
-            border-left: 2px solid #444; background: #080808;
-            padding: 10px; margin-bottom: 10px;
+            border-left: 2px solid #444;
+            background: #080808;
+            padding: 10px;
+            margin-bottom: 10px;
             text-align: left !important;
             border-radius: 0 var(--radius-md) var(--radius-md) 0;
         }
         
+        /* Streamlit Expander */
         .streamlit-expanderHeader {
             background-color: #0A0A0A !important; color: #888 !important;
             border: 1px solid #222 !important; font-size: 12px !important;
@@ -331,22 +254,27 @@ def inject_custom_css():
             border-radius: 0 0 var(--radius-md) var(--radius-md) !important;
         }
 
+        /* 协议卡片 */
         .protocol-box { 
             background: #0F0F0F; padding: 12px; border: 1px solid #333; 
             margin-bottom: 15px; font-size: 12px; 
-            text-align: left !important; border-radius: var(--radius-md); 
+            text-align: left !important;
+            border-radius: var(--radius-md); 
         }
         .protocol-row { display: flex; justify-content: flex-start; border-bottom: 1px solid #222; padding: 6px 0; }
         .protocol-row:last-child { border-bottom: none; }
         .protocol-key { color: #666; width: 80px; font-weight: bold; flex-shrink: 0; } 
         .protocol-val { color: #DDD; word-break: break-all; }
         
+        /* 洞察框 */
         .insight-box { 
             background: #0A0A0A; padding: 15px; border-left: 3px solid #FFF; color: #DDD; margin-top: 10px; 
-            text-align: left !important; border-radius: 0 var(--radius-md) var(--radius-md) 0; 
+            text-align: left !important;
+            border-radius: 0 var(--radius-md) var(--radius-md) 0; 
         }
         .mini-insight { color: #DDD; font-size: 12px; font-style: italic; border-top: 1px solid #222; margin-top: 8px; padding-top: 4px; }
         
+        /* 错误提示 */
         .custom-error {
             background-color: rgba(40, 0, 0, 0.9); border: 1px solid var(--accent-error); color: #ffcccc;
             padding: 15px; font-size: 13px; margin-bottom: 1rem; display: flex; align-items: center; gap: 10px;
@@ -355,7 +283,7 @@ def inject_custom_css():
         </style>
     """, unsafe_allow_html=True)
 
-# ================= 4. 核心工具函数 =================
+# ================= 3. 核心工具函数 =================
 
 @st.cache_resource
 def get_client():
@@ -428,51 +356,71 @@ def clean_json_string(text):
              except: pass
     return None
 
+# --- [新增] API 重试逻辑核心 ---
 def safe_generate(client, model, prompt, mime_type="text/plain", max_retries=3):
-    """带重试机制的 API 调用"""
+    """
+    带重试机制的 API 调用
+    """
     config = types.GenerateContentConfig(response_mime_type=mime_type)
+    
     retry_count = 0
-    base_delay = 2
+    base_delay = 2 # 初始等待 2 秒
     
     while retry_count <= max_retries:
         try:
             return client.models.generate_content(model=model, contents=prompt, config=config)
         except Exception as e:
             error_str = str(e)
+            # 检查是否为 429 (Resource exhausted) 或 503 (Server unavailable)
             if "429" in error_str or "429" in str(getattr(e, 'code', '')) or "Resource exhausted" in error_str:
                 if retry_count == max_retries:
+                    # 超过最大重试次数，返回错误
                     return type('obj', (object,), {'text': f"Error (Max Retries): {e}"})
                 
-                wait_time = base_delay * (2 ** retry_count)
+                wait_time = base_delay * (2 ** retry_count) # 指数退避: 2s, 4s, 8s
                 st.toast(f"⏳ API 请求过于频繁，正在重试 ({retry_count + 1}/{max_retries})...等待 {wait_time}秒", icon="⚠️")
                 time.sleep(wait_time)
                 retry_count += 1
             else:
+                # 如果是其他错误 (如 400 Bad Request)，直接返回，不重试
                 return type('obj', (object,), {'text': f"Error: {e}"})
 
 def stream_generate(client, model, prompt, max_retries=3):
-    """带重试机制的流式生成"""
+    """
+    带重试机制的流式生成
+    注意：流式生成如果中途中断，通常需要重新开始整个请求
+    """
     config = types.GenerateContentConfig(response_mime_type="text/plain")
+    
     retry_count = 0
     base_delay = 2
     
     while retry_count <= max_retries:
         try:
-            response = client.models.generate_content_stream(model=model, contents=prompt, config=config)
+            response = client.models.generate_content_stream(
+                model=model, 
+                contents=prompt, 
+                config=config
+            )
             for chunk in response:
-                if chunk.text: yield chunk.text
-            return
+                if chunk.text:
+                    yield chunk.text
+            return # 成功生成完则退出函数
+            
         except Exception as e:
             error_str = str(e)
             if "429" in error_str or "429" in str(getattr(e, 'code', '')) or "Resource exhausted" in error_str:
                 if retry_count == max_retries:
-                    yield f"Stream Error (Max Retries): {e}"; return
+                    yield f"Stream Error (Max Retries): {e}"
+                    return
+                
                 wait_time = base_delay * (2 ** retry_count)
                 st.toast(f"⏳ 流式生成连接繁忙，正在重试 ({retry_count + 1}/{max_retries})...", icon="⚠️")
                 time.sleep(wait_time)
                 retry_count += 1
             else:
-                yield f"Stream Error: {e}"; return
+                yield f"Stream Error: {e}"
+                return
 
 def simulated_stream(text, speed=0.01):
     for word in text:
@@ -558,7 +506,7 @@ def get_avatar(role):
     else:
         return BOT_AVATAR if os.path.exists(BOT_AVATAR) else None
 
-# ================= 5. 页面渲染 =================
+# ================= 4. 页面渲染 =================
 
 inject_custom_css()
 client = get_client()
@@ -566,19 +514,22 @@ client = get_client()
 df_sales = load_local_data(FILE_FACT)
 df_product = load_local_data(FILE_DIM)
 
-# --- Sidebar: 数据字典 & 范围 ---
+# --- [重构] Sidebar: 数据字典 & 范围 ---
 with st.sidebar:
     st.markdown("### ☷ 可用数据字段范围")
     
+    # 获取所有可用列名
     all_cols = set()
     if df_sales is not None: all_cols.update(df_sales.columns)
     if df_product is not None: all_cols.update(df_product.columns)
     
     def render_chips(label, items, is_highlight=False):
+        """渲染分类和圆角矩阵标签"""
         st.markdown(f"<div class='dict-category'>{label}</div>", unsafe_allow_html=True)
         html = "<div class='chip-container'>"
         has_item = False
         for item in items:
+            # 简单去重和清理
             if item in all_cols or label in ["⚙︎ 渠道范围", "⏱︎ 数据时间"]: 
                 extra_class = "highlight" if is_highlight else ""
                 html += f"<div class='field-chip {extra_class}'>{item}</div>"
@@ -589,29 +540,35 @@ with st.sidebar:
         else:
             st.markdown(f"<span style='font-size:11px; color:#555;'>暂无字段</span>", unsafe_allow_html=True)
 
-    # 1. 时间范围
+    # ================= [修改] 1. 时间范围 (已移至最前) =================
     time_range_str = "未加载"
     if df_sales is not None:
+        # 尝试寻找时间列
         time_col = None
         for c in df_sales.columns:
             if "年季" in c or "date" in c.lower() or "time" in c.lower():
-                time_col = c; break
+                time_col = c
+                break
         
         if time_col:
             try:
+                # 假设是 YearQuarter 格式 (e.g. 20211 or 2021Q1)
                 min_val = df_sales[time_col].min()
                 max_val = df_sales[time_col].max()
+                
                 def fmt_q(val):
                     s = str(val)
                     if "Q" in s: return s
-                    if len(s) == 5: return f"{s[:4]}Q{s[-1]}"
+                    if len(s) == 5: return f"{s[:4]}Q{s[-1]}" # 20211 -> 2021Q1
                     return s
+                
                 time_range_str = f"{fmt_q(min_val)} ~ {fmt_q(max_val)}"
-            except: time_range_str = "格式解析失败"
+            except:
+                time_range_str = "格式解析失败"
     
     render_chips("⏱︎ 数据时间", [time_range_str], is_highlight=True)
 
-    # 2. 产品信息
+    # ================= 2. 产品信息 =================
     product_fields = [
         "通用名", "商品名", "药品名称", "成分名", "生产企业", "集团名称", 
         "规格", "剂型", "ATC1Des", "ATC2Des", "ATC3Des", "ATC4Des",
@@ -620,44 +577,31 @@ with st.sidebar:
     ]
     render_chips("🛒 产品信息", product_fields)
 
-    # 3. 政策标签
+    # ================= 3. 政策标签 =================
     policy_fields = ["医保", "最早医保纳入年份", "集采批次", "集采结果", "一致性评价", "首次上市年代"]
     render_chips("◆ 政策标签", policy_fields)
 
-    # 4. 指标类型
+    # ================= 4. 指标类型 =================
     metric_fields = ["销售额", "销售量"]
     render_chips("〽︎ 指标类型", metric_fields)
 
-    # 5. 渠道
+    # ================= 5. 渠道 =================
+    # 尝试从数据中获取渠道值，如果不行则显示字段名
     channel_items = []
     if df_sales is not None and "渠道" in df_sales.columns:
         try:
             unique_channels = df_sales["渠道"].dropna().unique().tolist()
-            if len(unique_channels) < 10: channel_items = unique_channels
-            else: channel_items = ["渠道"]
-        except: channel_items = ["渠道"]
-    else: channel_items = ["渠道"]
+            if len(unique_channels) < 10: # 如果渠道数量少，显示具体值
+                channel_items = unique_channels
+            else:
+                channel_items = ["渠道"]
+        except:
+            channel_items = ["渠道"]
+    else:
+        channel_items = ["渠道"]
     
     render_chips("⚙︎ 渠道范围", channel_items)
 
-    # [新增] 下载按钮
-    st.markdown("---")
-    st.markdown("### 报告导出")
-    if "messages" in st.session_state and len(st.session_state.messages) > 0:
-        pdf_data = generate_pdf_report(st.session_state.messages)
-        if pdf_data:
-            st.download_button(
-                label="下载分析报告 (PDF)",
-                data=pdf_data,
-                file_name=f"ChatBI_Report_{int(time.time())}.pdf",
-                mime="application/pdf",
-                key="btn_download_pdf"
-            )
-        else:
-            if not os.path.exists(FONT_PATH):
-                st.warning(f"缺少字体文件 {FONT_PATH}，无法生成中文 PDF。")
-            else:
-                st.error("PDF 生成失败，请查看后台日志。")
 
     st.markdown("---")
     st.markdown(f"<div style='font-size:10px; color:#666; text-align:center;'>Powered by {MODEL_SMART}</div>", unsafe_allow_html=True)
@@ -675,6 +619,7 @@ if user_avatar_b64:
 else:
     user_avatar_html = '<div class="user-avatar-circle" style="color:#FFF; font-size:10px;">User</div>'
 
+# 调整后的 HTML 结构
 st.markdown(f"""
 <div class="fixed-header-container">
     <div class="nav-left">
@@ -682,7 +627,7 @@ st.markdown(f"""
         <div class="nav-logo-text">ChatBI</div>
     </div>
     <div class="nav-right">
-        <div class="nav-tag">User</div>
+        <div class="nav-tag">Peiwen</div>
         {user_avatar_html}
     </div>
 </div>
@@ -692,8 +637,6 @@ if "messages" not in st.session_state: st.session_state.messages = []
 
 # --- Chat History ---
 for msg in st.session_state.messages:
-    # 忽略在 UI 上隐藏的 thought 消息 (如果以后需要完全隐藏)
-    # 这里我们目前还是在 UI 显示的，只是 PDF 不下载
     avatar_file = get_avatar(msg["role"])
     with st.chat_message(msg["role"], avatar=avatar_file):
         if msg["type"] == "text": 
@@ -705,7 +648,7 @@ for msg in st.session_state.messages:
         elif msg["type"] == "error":
             st.markdown(f'<div class="custom-error">{msg["content"]}</div>', unsafe_allow_html=True)
 
-# --- 猜你想问 ---
+# --- 猜你想问 (左对齐按钮) ---
 if not st.session_state.messages:
     st.markdown("### 我们正在通过人工智能重塑医药数据，点亮医药行业，有什么要问我们？")
     st.markdown("###  ")
@@ -746,7 +689,8 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             # ================= 1. 意图识别 =================
             intent = "inquiry"
             
-            with st.status("正在分析意图...这个过程可能会花1~2分钟，请稍候", expanded=False) as status:
+            with st.status("正在分析意图...", expanded=False) as status:
+                # [中文提示词] 意图路由
                 prompt_router = f"""
                 请根据以下上下文判断用户的意图。
                 
@@ -773,9 +717,10 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
 
             # ================= 逻辑分流 =================
             
-            # 2. 简单查询 (Inquiry)
+            # 2. 简单查询
             if 'analysis' not in intent and 'irrelevant' not in intent:
-                with st.spinner("正在生成查询代码，这个过程可能会花1~2分钟，请稍候..."):
+                with st.spinner("正在生成查询代码，这个过程可能需要1~2分钟，请耐心等待…"):
+                    # [中文提示词] 简单查询 & 四要素提取
                     prompt_code = f"""
                     你是一位医药行业的 Python 专家。
                     
@@ -790,154 +735,161 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     【指令】 
                     1. 严格按用户要求提取字段。
                     2. 使用 `pd.merge` 关联两表 (除非用户只查单表)。
-                    3. **重要**: 确保所有使用的变量都在代码中明确定义。
+                    3. **重要**: 确保所有使用的变量（如 market_share）都在代码中明确定义。不要使用未定义的变量。
                     4. **绝对禁止**导入 IPython 或使用 display() 函数。
                     5. 禁止使用 df.columns = [...] 强行改名，请使用 df.rename()。
-                    6. 避免 'ambiguous' 错误：reset_index() 前先使用 `df.index.name = None`。
+                    6. **避免 'ambiguous' 错误**：如果 index name 与 column name 冲突，请在 reset_index() 前先使用 `df.index.name = None` 或重命名索引。
+                    7. 结果必须赋值给变量 `result`。
+                    8. **份额计算强制规则**: 
+                    - 计算市场份额时，结果**必须乘以 100**，转换为百分数格式 (Percentage)。
+                    - 例如：销售额/总额 = 0.1234，应存储为 12.34，而不是 0.1234。
+                    - 列名必须包含 "(%)" 以提示用户，例如 "2024份额(%)"。
+                    9. **数据类型与精度**:
+                    - 份额列、变化率列：必须强制转换为 `float` 类型，保留 1 位小数 (`round(1)`)。
+                    - 销售额列：必须转换为 `int` 类型 (无小数)。
+                    - **严禁**对份额列使用 `astype(int)`，否则小于 1% 的份额会变成 0
+                    10. **市场份额** 当提到计算份额时，优先定义分母是用户提到的所有产品总 > 对应细分领域下所有产品总 > 全产品总和；然后再做计算
+                    11. **代码安全 - 严禁 inplace=True 后赋值**: 
+                        - 错误写法: `df = df.rename(..., inplace=True)` (这会导致 df 变成 None)
+                        - 正确写法: `df = df.rename(...)` 或 `df.rename(..., inplace=True)` (不赋值)
                     
-                    7. **结果赋值规则 (核心)**: 
-                       - **单张表格**: 将结果赋值给变量 `result` (DataFrame)。
-                       - **多张表格**: 如果用户在一个问题中请求了多个不同的表格（例如："给我看销售额，再给我看销量排名"），
-                         请将 `result` 定义为一个字典，Key是表格的中文标题，Value是对应的DataFrame。
-                         格式示例: `result = {{ "中国零售市场增长": df_growth, "Top10产品": df_top10 }}`
                     
-                    8. **份额计算规则**: 
-                       - 结果**必须乘以 100**，转换为百分数格式。
-                       - 列名包含 "(%)"。
-                       - 类型强制转换为 `float` 并 `round(1)`。
+                    【关键指令】
+                    1. **数据范围检查**: 查看上下文中的日期范围。最新的日期决定了“当前周期”。
+                    2. **同口径对比 (Like-for-Like)**: 当分析跨年增长或趋势时，**必须**筛选前一年的数据以匹配当前年份的月份/季度范围 (YTD逻辑)。
+                        - 例如: 如果最大日期是 2025-09-30，那么“2024年数据”用于对比时，只能取 2024-01-01 到 2024-09-30，而不是2024全年的数据。
+                    3. 返回时间范围时，需要说明用的原始表中的哪个时间段 如问最近两年的同比，如果为了对齐数据，则返回格式为 2024Q1~Q3 & 2025Q1~Q3
                     
-                    9. **数据类型**: 销售额强制转 `int`，份额转 `float`。
+                    【摘要生成规则 (Summary)】
+                    - scope (范围): 数据的筛选范围。
+                    - metrics (指标): 用户查询的核心指标。
+                    - key_match (关键匹配): **必须说明**提取了用户什么词，去匹配了哪个列。例如："提取用户词 'K药' -> 模糊匹配 '商品名' 列"。
+                    - logic (加工逻辑): 简述筛选和计算步骤，严禁提及“表关联”、“Merge”等技术术语。
                     
-                    10. **同口径对比**: 若分析跨年趋势，必须筛选前一年同期数据 (YTD)。
-
-                    输出 JSON: {{ "summary": {{ "intent": "简单取数", "scope": "...", "metrics": "...", "logic": "..." }}, "code": "..." }}
+                    输出 JSON: {{ "summary": {{ "intent": "简单取数", "scope": "...", "metrics": "...", "key_match": "...", "logic": "..." }}, "code": "..." }}
                     """
+                    resp_code = safe_generate(client, MODEL_SMART, prompt_code, "application/json")
+                    plan = clean_json_string(resp_code.text)
+                
+                if plan:
+                    # [新功能] 打印数据调用逻辑
+                    summary_obj = plan.get('summary', {})
+                    logic_text = summary_obj.get('logic', '暂无逻辑描述')
+                    
+                    with st.expander("> 查看思考过程 (THOUGHT PROCESS)", expanded=True): 
+                        # 使用 placeholder + simulated_stream 实现带样式的打字机效果
+                        logic_placeholder = st.empty()
+                        streamed_text = ""
+                        # 模拟流式输出
+                        for chunk in simulated_stream(logic_text):
+                            streamed_text += chunk
+                            logic_placeholder.markdown(f"""
+                            <div class="thought-box">
+                                <span class="thought-header">逻辑推演:</span>
+                                {streamed_text}
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        st.markdown("**生成代码:**")
+                        st.code(plan.get('code'), language='python')
+
+                    # 渲染四要素卡片
+                    render_protocol_card(summary_obj)
                     
                     try:
-                        resp_code = safe_generate(client, MODEL_SMART, prompt_code, "application/json")
-                        
-                        if not resp_code or not hasattr(resp_code, 'text'):
-                            raise Exception("模型未返回有效响应")
-                            
-                        plan = clean_json_string(resp_code.text)
-                        
-                        if not plan or 'code' not in plan:
-                            raise Exception("无法生成有效的数据查询代码，请尝试换一种问法。")
-
-                        summary_obj = plan.get('summary', {})
-                        logic_text = summary_obj.get('logic', '暂无逻辑描述')
-                        
-                        with st.expander("> 查看思考过程 (THOUGHT PROCESS)", expanded=True): 
-                            logic_placeholder = st.empty()
-                            streamed_text = ""
-                            for chunk in simulated_stream(logic_text):
-                                streamed_text += chunk
-                                logic_placeholder.markdown(f"""
-                                <div class="thought-box">
-                                    <span class="thought-header">逻辑推演:</span>
-                                    {streamed_text}
-                                </div>
-                                """, unsafe_allow_html=True)
-                            
-                            st.markdown("**生成代码:**")
-                            st.code(plan.get('code'), language='python')
-
-                        render_protocol_card(summary_obj)
-                        
+                        # 【修正】使用 copy() 确保数据隔离
                         exec_ctx = {"df_sales": df_sales.copy(), "df_product": df_product.copy()}
+                        res_raw = safe_exec_code(plan['code'], exec_ctx)
+                        res_df = normalize_result(res_raw)
                         
-                        try:
-                            res_raw = safe_exec_code(plan['code'], exec_ctx)
-                        except Exception as e_exec:
-                            raise Exception(f"代码执行失败: {str(e_exec)}")
+                        if not safe_check_empty(res_df):
+                            formatted_df = format_display_df(res_df)
+                            st.dataframe(formatted_df, use_container_width=True)
+                            st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
 
-                        final_res_list = [] 
-
-                        if res_raw is None:
-                            st.warning("查询执行完成，但没有返回数据结果 (Result is None)。")
-                        
-                        elif isinstance(res_raw, dict) and len(res_raw) > 0:
-                            st.success(f"已为您生成 {len(res_raw)} 张相关表格")
-                            for title, df_item in res_raw.items():
-                                st.markdown(f"#### {title}")
-                                df_clean = normalize_result(df_item)
-                                if not safe_check_empty(df_clean):
-                                    formatted_df = format_display_df(df_clean)
-                                    st.dataframe(formatted_df, use_container_width=True)
-                                    st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
-                                    final_res_list.append(df_clean)
-                                else:
-                                    st.caption(f"{title}: 无数据")
-
-                        else:
-                            res_df = normalize_result(res_raw)
-                            if not safe_check_empty(res_df):
-                                formatted_df = format_display_df(res_df)
-                                st.dataframe(formatted_df, use_container_width=True)
-                                st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
-                                final_res_list.append(res_df)
-                            else:
-                                st.markdown(f'<div class="custom-error">查询结果为空，请检查筛选条件。</div>', unsafe_allow_html=True)
-
-                        # --- Flash 总结 ---
-                        if final_res_list:
+                            # ==========================================
+                            # [新增功能 START] 1. Flash 快速总结表格
+                            # ==========================================
                             try:
-                                data_str = "\n".join([df.head(10).to_string() for df in final_res_list])
-                                prompt_summary = f"请用精炼的中文总结以下数据的主要发现 (不超过100字):\n{data_str[:5000]}"
+                                prompt_summary = f"请用精炼的中文一句话总结以下数据的主要发现 (不使用Markdown格式):\n{formatted_df.to_string()}"
                                 resp_summary = safe_generate(client, MODEL_FAST, prompt_summary)
                                 summary_text = resp_summary.text.strip()
                                 
+                                # 显示并保存总结
                                 st.markdown(f'<div class="mini-insight">>> {summary_text}</div>', unsafe_allow_html=True)
                                 st.session_state.messages.append({"role": "assistant", "type": "text", "content": summary_text})
-                            except: pass
+                            except Exception as e:
+                                pass # 总结失败不影响数据展示
 
-                        # --- Smart 追问 ---
-                        try:
-                            all_columns = []
-                            if df_sales is not None: all_columns.extend(df_sales.columns.tolist())
-                            if df_product is not None: all_columns.extend(df_product.columns.tolist())
-                            cols_str = ", ".join(list(set(all_columns)))
+                            # ==========================================
+                            # [新增功能 START] 2. Smart 模型生成追问
+                            # ==========================================
+                            try:
+                                # 1. 获取所有可用字段名
+                                all_columns = []
+                                if df_sales is not None: all_columns.extend(df_sales.columns.tolist())
+                                if df_product is not None: all_columns.extend(df_product.columns.tolist())
+                                # 去重并转为字符串
+                                cols_str = ", ".join(list(set(all_columns)))
 
-                            prompt_next = f"""
-                            基于生成的表格数据和洞察。
-                            
-                            【数据库完整可用字段列表】:
-                            {cols_str}
-                            
-                            【指令】
-                            针对用户的问题 "{user_query}"，给出客户最可能想深入挖掘的 2 个问题。
-                            严格输出 JSON 字符串列表。
-                            示例格式: ["查看该产品的分医院排名", "分析不同剂型的份额变化"]
-                            """
-                            resp_next = safe_generate(client, MODEL_SMART, prompt_next, "application/json")
-                            next_questions = clean_json_string(resp_next.text)
-
-                            if isinstance(next_questions, list) and len(next_questions) > 0:
-                                st.markdown("### 是否追问")
-                                c1, c2 = st.columns(2)
+                                # 2. 构建包含字段信息的提示词
+                                prompt_next = f"""
+                                基于生成的表格数据和洞察。
                                 
-                                def get_q_text_safe(q):
-                                    if isinstance(q, str): return q
-                                    if isinstance(q, dict): return q.get('question', list(q.values())[0])
-                                    return str(q)
+                                【数据库完整可用字段列表】:
+                                {cols_str}
+                                
+                                【指令】
+                                针对用户的问题 "{user_query}"，从上面的“可用字段列表”中寻找灵感，
+                                给出客户最可能想深入挖掘的 2 个问题（例如：按[某个具体字段]拆分、看[某个字段]的趋势等）。
+                                
+                                严格输出 JSON 字符串列表。
+                                示例格式: ["查看该产品的分医院排名", "分析不同剂型的份额变化"]
+                                """
+                                resp_next = safe_generate(client, MODEL_SMART, prompt_next, "application/json")
+                                next_questions = clean_json_string(resp_next.text)
 
-                                if len(next_questions) > 0: 
-                                    q1_text = get_q_text_safe(next_questions[0])
-                                    c1.button(f"> {q1_text}", use_container_width=True, on_click=handle_followup, args=(q1_text,))
-                                if len(next_questions) > 1: 
-                                    q2_text = get_q_text_safe(next_questions[1])
-                                    c2.button(f"> {q2_text}", use_container_width=True, on_click=handle_followup, args=(q2_text,))
-                        except Exception as e: pass
+                                if isinstance(next_questions, list) and len(next_questions) > 0:
+                                    st.markdown("### 是否追问")
+                                    c1, c2 = st.columns(2)
+                                    
+                                    def get_q_text_safe(q):
+                                        if isinstance(q, str): return q
+                                        if isinstance(q, dict): return q.get('question', list(q.values())[0])
+                                        return str(q)
 
+                                    if len(next_questions) > 0: 
+                                        q1_text = get_q_text_safe(next_questions[0])
+                                        c1.button(f"> {q1_text}", use_container_width=True, on_click=handle_followup, args=(q1_text,))
+                                    if len(next_questions) > 1: 
+                                        q2_text = get_q_text_safe(next_questions[1])
+                                        c2.button(f"> {q2_text}", use_container_width=True, on_click=handle_followup, args=(q2_text,))
+                            except Exception as e:
+                                pass # 追问生成失败不报错
+                            
+                            # ==========================================
+                            # [新增功能 END]
+                            # ==========================================
+
+                        else:
+                            st.warning("尝试模糊搜索...")
+                            fallback_code = f"result = df_product[df_product.astype(str).apply(lambda x: x.str.contains('{user_query[:2]}', case=False, na=False)).any(axis=1)].head(10)"
+                            try:
+                                res_fallback = safe_exec_code(fallback_code, exec_ctx)
+                                if not safe_check_empty(normalize_result(res_fallback)):
+                                    st.dataframe(res_fallback)
+                                    st.session_state.messages.append({"role": "assistant", "type": "df", "content": res_fallback})
+                                else:
+                                    st.markdown(f'<div class="custom-error">未找到相关数据</div>', unsafe_allow_html=True)
+                            except: pass
                     except Exception as e:
-                        error_msg = f"处理您的请求时遇到问题: {str(e)}"
-                        st.markdown(f'<div class="custom-error">{error_msg}</div>', unsafe_allow_html=True)
-                        st.session_state.messages.append({"role": "assistant", "type": "error", "content": error_msg})
+                        st.markdown(f'<div class="custom-error">代码执行错误: {e}</div>', unsafe_allow_html=True)
 
             # 3. 深度分析
             elif 'analysis' in intent:
                 
                 with st.spinner("正在规划分析路径，这个过程可能需要1~2分钟，请耐心等待..."):
+                    # [中文提示词] 深度分析 & 四要素提取
                     prompt_plan = f"""
                     角色: 资深医药数据分析师。
                     历史记录: {history_str}
@@ -947,19 +899,23 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     关键指令:
                     1. **数据范围检查**: 查看上下文中的日期范围。最新的日期决定了“当前周期”。
                     2. **同口径对比 (Like-for-Like)**: 当分析跨年增长或趋势时，**必须**筛选前一年的数据以匹配当前年份的月份/季度范围 (YTD逻辑)。
-                    3. **代码安全**: 绝对禁止 `df = df.func(inplace=True)` 这种写法。
-                    4. **完整性**: 提供 2-5 个不同的分析维度。
-                    5. **变量定义检查**: 严禁引用未定义的变量。
+                        - 例如: 如果最大日期是 2025-09-30，那么“2024年数据”用于对比时，只能取 2024-01-01 到 2024-09-30，而不是2024全年的数据。
+                    3. **代码安全**: 绝对禁止 `df = df.func(inplace=True)` 这种写法，这会导致 DataFrame 变成 NoneType 引发合并错误。
+                    4. **语言**: 所有的 "title" (标题), "desc" (描述), 和 "intent_analysis" (分析思路) 必须使用**简体中文**。
+                    5. **完整性**: 提供 2-5 个不同的分析维度。
+                    6. **变量定义检查 (CRITICAL)**: 
+                        - **严禁引用未定义的变量**（例如代码中出现了 `df_excl` 或 `df_temp` 但前面没有定义它）。
+                        - 凡是使用的变量，必须在当前代码块中显式赋值。
                     
-                    严格输出 JSON: 
+                    严格输出 JSON (不要Markdown, 不要代码块): 
                     {{ 
                         "summary": {{ 
                              "intent": "深度市场分析", 
-                             "scope": "...", 
-                             "metrics": "...", 
-                             "logic": "..." 
+                             "scope": "产品: [产品名], 时间: [YYYY-MM ~ YYYY-MM]",
+                             "metrics": "趋势 / 结构 / 增长驱动力...", 
+                             "logic": "1. 总体趋势分析; 2. 产品结构拆解; 3. 增长贡献度计算..." 
                         }},
-                        "intent_analysis": "这里用中文详细描述你的分析思路...", 
+                        "intent_analysis": "这里用中文详细描述你的分析思路，特别是说明你如何处理了时间周期对齐（例如：'鉴于数据截止至2025Q3，我将提取2024同期数据进行同比分析...'）", 
                         "angles": [ 
                             {{ "title": "中文标题", "desc": "中文描述", "code": "Python code storing result in `result` variable..." }} 
                         ] 
@@ -973,15 +929,16 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     st.stop()
 
                 if plan_json:
+                    # [新功能] 打印分析思路
                     intro_text = plan_json.get('intent_analysis', '分析思路生成中...')
                     intro = f"**分析思路:**\n{intro_text}"
                     
                     with st.expander("> 查看分析思路 (ANALYSIS THOUGHT)", expanded=True): 
                          st.write_stream(simulated_stream(intro))
                     
-                    # 【核心修改】增加 is_thought=True 标记，防止 PDF 导出包含此内容
-                    st.session_state.messages.append({"role": "assistant", "type": "text", "content": intro, "is_thought": True})
+                    st.session_state.messages.append({"role": "assistant", "type": "text", "content": intro})
                     
+                    # 渲染四要素卡片 (如果有的话)
                     if 'summary' in plan_json:
                         render_protocol_card(plan_json['summary'])
 
@@ -991,6 +948,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                         with st.container():
                             st.markdown(f"**> {angle['title']}**")
                             
+                            # 【修正】循环内部创建独立 Context，防止污染
                             local_ctx = {
                                 "df_sales": df_sales.copy(), 
                                 "df_product": df_product.copy(),
@@ -1015,6 +973,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                                         st.dataframe(formatted_df, use_container_width=True)
                                         st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
                                         
+                                        # [中文提示词] 数据解读
                                         prompt_mini = f"用一句话解读以下数据 (中文): \n{res_df.to_string()}"
                                         resp_mini = safe_generate(client, MODEL_FAST, prompt_mini)
                                         explanation = resp_mini.text
@@ -1028,6 +987,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     if angles_data:
                         st.markdown("### 分析总结")
                         findings = "\n".join([f"[{a['title']}]: {a['explanation']}" for a in angles_data])
+                        # [中文提示词] 最终总结
                         prompt_final = f"""基于以下发现: {findings}，回答问题: "{user_query}"。请使用专业、客观的中文口吻。"""
                         
                         stream_gen = stream_generate(client, MODEL_SMART, prompt_final)
@@ -1035,7 +995,9 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                         st.session_state.messages.append({"role": "assistant", "type": "text", "content": f"### 分析总结\n{final_response}"})
 
                         # === Follow-up questions ===
+                        # [中文提示词] 追问生成
                         
+                        # 1. 获取字段上下文
                         all_columns = []
                         if df_sales is not None: all_columns.extend(df_sales.columns.tolist())
                         if df_product is not None: all_columns.extend(df_product.columns.tolist())
@@ -1081,4 +1043,5 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                 st.session_state.messages.append({"role": "assistant", "type": "text", "content": msg})
 
     except Exception as e:
+        import traceback
         st.markdown(f'<div class="custom-error">系统异常: {str(e)}</div>', unsafe_allow_html=True)
