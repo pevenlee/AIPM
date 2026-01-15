@@ -746,7 +746,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             # ================= 1. 意图识别 =================
             intent = "inquiry"
             
-            with st.status("正在分析意图...", expanded=False) as status:
+            with st.status("正在分析意图...这个过程可能会花1~2分钟，请稍候", expanded=False) as status:
                 prompt_router = f"""
                 请根据以下上下文判断用户的意图。
                 
@@ -775,7 +775,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             
             # 2. 简单查询 (Inquiry)
             if 'analysis' not in intent and 'irrelevant' not in intent:
-                with st.spinner("正在生成查询代码..."):
+                with st.spinner("正在生成查询代码，这个过程可能会花1~2分钟，请稍候..."):
                     prompt_code = f"""
                     你是一位医药行业的 Python 专家。
                     
