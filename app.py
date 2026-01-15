@@ -24,7 +24,7 @@ st.set_page_config(
 
 # --- 模型配置 ---
 MODEL_FAST = "gemini-2.0-flash"        
-MODEL_SMART = "gemini-3-pro-preview"        
+MODEL_SMART = "gemini-2.0-flash-thinking-exp-01-21"        
 
 # --- 常量定义 ---
 JOIN_KEY = "药品索引"
@@ -717,9 +717,9 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
 
             # ================= 逻辑分流 =================
             
-            # 2. 简单查询
+            # 2. 简单查询 (Inquiry) - 升级版：支持多表返回
             if 'analysis' not in intent and 'irrelevant' not in intent:
-                with st.spinner("正在生成查询代码，这个过程可能需要1~2分钟，请耐心等待…"):
+                with st.spinner("正在生成查询代码..."): # 移除具体的分钟数，减少焦虑
                     # [中文提示词] 简单查询 & 四要素提取
                     prompt_code = f"""
                     你是一位医药行业的 Python 专家。
@@ -735,155 +735,166 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     【指令】 
                     1. 严格按用户要求提取字段。
                     2. 使用 `pd.merge` 关联两表 (除非用户只查单表)。
-                    3. **重要**: 确保所有使用的变量（如 market_share）都在代码中明确定义。不要使用未定义的变量。
+                    3. **重要**: 确保所有使用的变量都在代码中明确定义。
                     4. **绝对禁止**导入 IPython 或使用 display() 函数。
                     5. 禁止使用 df.columns = [...] 强行改名，请使用 df.rename()。
-                    6. **避免 'ambiguous' 错误**：如果 index name 与 column name 冲突，请在 reset_index() 前先使用 `df.index.name = None` 或重命名索引。
-                    7. 结果必须赋值给变量 `result`。
-                    8. **份额计算强制规则**: 
-                    - 计算市场份额时，结果**必须乘以 100**，转换为百分数格式 (Percentage)。
-                    - 例如：销售额/总额 = 0.1234，应存储为 12.34，而不是 0.1234。
-                    - 列名必须包含 "(%)" 以提示用户，例如 "2024份额(%)"。
-                    9. **数据类型与精度**:
-                    - 份额列、变化率列：必须强制转换为 `float` 类型，保留 1 位小数 (`round(1)`)。
-                    - 销售额列：必须转换为 `int` 类型 (无小数)。
-                    - **严禁**对份额列使用 `astype(int)`，否则小于 1% 的份额会变成 0
-                    10. **市场份额** 当提到计算份额时，优先定义分母是用户提到的所有产品总 > 对应细分领域下所有产品总 > 全产品总和；然后再做计算
-                    11. **代码安全 - 严禁 inplace=True 后赋值**: 
-                        - 错误写法: `df = df.rename(..., inplace=True)` (这会导致 df 变成 None)
-                        - 正确写法: `df = df.rename(...)` 或 `df.rename(..., inplace=True)` (不赋值)
+                    6. 避免 'ambiguous' 错误：reset_index() 前先使用 `df.index.name = None`。
                     
+                    7. **结果赋值规则 (核心)**: 
+                       - **单张表格**: 将结果赋值给变量 `result` (DataFrame)。
+                       - **多张表格**: 如果用户在一个问题中请求了多个不同的表格（例如："给我看销售额，再给我看销量排名"），
+                         请将 `result` 定义为一个字典，Key是表格的中文标题，Value是对应的DataFrame。
+                         格式示例: `result = {{ "中国零售市场增长": df_growth, "不同领域销售": df_cat, "Top10产品": df_top10 }}`
                     
-                    【关键指令】
-                    1. **数据范围检查**: 查看上下文中的日期范围。最新的日期决定了“当前周期”。
-                    2. **同口径对比 (Like-for-Like)**: 当分析跨年增长或趋势时，**必须**筛选前一年的数据以匹配当前年份的月份/季度范围 (YTD逻辑)。
-                        - 例如: 如果最大日期是 2025-09-30，那么“2024年数据”用于对比时，只能取 2024-01-01 到 2024-09-30，而不是2024全年的数据。
-                    3. 返回时间范围时，需要说明用的原始表中的哪个时间段 如问最近两年的同比，如果为了对齐数据，则返回格式为 2024Q1~Q3 & 2025Q1~Q3
+                    8. **份额计算规则**: 
+                       - 结果**必须乘以 100**，转换为百分数格式。
+                       - 列名包含 "(%)"。
+                       - 类型强制转换为 `float` 并 `round(1)`。
                     
-                    【摘要生成规则 (Summary)】
-                    - scope (范围): 数据的筛选范围。
-                    - metrics (指标): 用户查询的核心指标。
-                    - key_match (关键匹配): **必须说明**提取了用户什么词，去匹配了哪个列。例如："提取用户词 'K药' -> 模糊匹配 '商品名' 列"。
-                    - logic (加工逻辑): 简述筛选和计算步骤，严禁提及“表关联”、“Merge”等技术术语。
+                    9. **数据类型**: 销售额强制转 `int`，份额转 `float`。
                     
-                    输出 JSON: {{ "summary": {{ "intent": "简单取数", "scope": "...", "metrics": "...", "key_match": "...", "logic": "..." }}, "code": "..." }}
-                    """
-                    resp_code = safe_generate(client, MODEL_SMART, prompt_code, "application/json")
-                    plan = clean_json_string(resp_code.text)
-                
-                if plan:
-                    # [新功能] 打印数据调用逻辑
-                    summary_obj = plan.get('summary', {})
-                    logic_text = summary_obj.get('logic', '暂无逻辑描述')
-                    
-                    with st.expander("> 查看思考过程 (THOUGHT PROCESS)", expanded=True): 
-                        # 使用 placeholder + simulated_stream 实现带样式的打字机效果
-                        logic_placeholder = st.empty()
-                        streamed_text = ""
-                        # 模拟流式输出
-                        for chunk in simulated_stream(logic_text):
-                            streamed_text += chunk
-                            logic_placeholder.markdown(f"""
-                            <div class="thought-box">
-                                <span class="thought-header">逻辑推演:</span>
-                                {streamed_text}
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        st.markdown("**生成代码:**")
-                        st.code(plan.get('code'), language='python')
+                    10. **同口径对比**: 若分析跨年趋势，必须筛选前一年同期数据 (YTD)。
 
-                    # 渲染四要素卡片
-                    render_protocol_card(summary_obj)
+                    输出 JSON: {{ "summary": {{ "intent": "简单取数", "scope": "...", "metrics": "...", "logic": "..." }}, "code": "..." }}
+                    """
                     
                     try:
-                        # 【修正】使用 copy() 确保数据隔离
-                        exec_ctx = {"df_sales": df_sales.copy(), "df_product": df_product.copy()}
-                        res_raw = safe_exec_code(plan['code'], exec_ctx)
-                        res_df = normalize_result(res_raw)
+                        # 增加超时保护或错误捕获
+                        resp_code = safe_generate(client, MODEL_SMART, prompt_code, "application/json")
                         
-                        if not safe_check_empty(res_df):
-                            formatted_df = format_display_df(res_df)
-                            st.dataframe(formatted_df, use_container_width=True)
-                            st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
+                        # 检查模型是否拒绝或出错
+                        if not resp_code or not hasattr(resp_code, 'text'):
+                            raise Exception("模型未返回有效响应")
+                            
+                        plan = clean_json_string(resp_code.text)
+                        
+                        if not plan or 'code' not in plan:
+                            # 兜底：如果没有生成代码，抛出错误而不是静默失败
+                            raise Exception("无法生成有效的数据查询代码，请尝试换一种问法。")
 
-                            # ==========================================
-                            # [新增功能 START] 1. Flash 快速总结表格
-                            # ==========================================
+                        # [打印数据调用逻辑]
+                        summary_obj = plan.get('summary', {})
+                        logic_text = summary_obj.get('logic', '暂无逻辑描述')
+                        
+                        with st.expander("> 查看思考过程 (THOUGHT PROCESS)", expanded=True): 
+                            logic_placeholder = st.empty()
+                            streamed_text = ""
+                            for chunk in simulated_stream(logic_text):
+                                streamed_text += chunk
+                                logic_placeholder.markdown(f"""
+                                <div class="thought-box">
+                                    <span class="thought-header">逻辑推演:</span>
+                                    {streamed_text}
+                                </div>
+                                """, unsafe_allow_html=True)
+                            
+                            st.markdown("**生成代码:**")
+                            st.code(plan.get('code'), language='python')
+
+                        render_protocol_card(summary_obj)
+                        
+                        # --- 代码执行与多表渲染 ---
+                        exec_ctx = {"df_sales": df_sales.copy(), "df_product": df_product.copy()}
+                        
+                        try:
+                            res_raw = safe_exec_code(plan['code'], exec_ctx)
+                        except Exception as e_exec:
+                            # 捕获代码执行层面的具体的 Python 报错
+                            raise Exception(f"代码执行失败: {str(e_exec)}")
+
+                        # [关键修改] 判断结果类型：是单个 DF 还是 字典(多表)
+                        final_res_list = [] # 用于后续总结
+
+                        if res_raw is None:
+                            st.warning("查询执行完成，但没有返回数据结果 (Result is None)。")
+                        
+                        # 情况 A: 字典 (多张表)
+                        elif isinstance(res_raw, dict) and len(res_raw) > 0:
+                            st.success(f"已为您生成 {len(res_raw)} 张相关表格")
+                            for title, df_item in res_raw.items():
+                                st.markdown(f"#### {title}")
+                                df_clean = normalize_result(df_item)
+                                if not safe_check_empty(df_clean):
+                                    formatted_df = format_display_df(df_clean)
+                                    st.dataframe(formatted_df, use_container_width=True)
+                                    # 将数据加入历史记录
+                                    st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
+                                    final_res_list.append(df_clean)
+                                else:
+                                    st.caption(f"{title}: 无数据")
+
+                        # 情况 B: 单个 DataFrame/Series/List
+                        else:
+                            res_df = normalize_result(res_raw)
+                            if not safe_check_empty(res_df):
+                                formatted_df = format_display_df(res_df)
+                                st.dataframe(formatted_df, use_container_width=True)
+                                st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
+                                final_res_list.append(res_df)
+                            else:
+                                st.markdown(f'<div class="custom-error">查询结果为空，请检查筛选条件。</div>', unsafe_allow_html=True)
+
+                        # --- Flash 总结 (针对所有表格) ---
+                        if final_res_list:
                             try:
-                                prompt_summary = f"请用精炼的中文一句话总结以下数据的主要发现 (不使用Markdown格式):\n{formatted_df.to_string()}"
+                                # 把所有表格数据拼接成字符串给 AI 总结，限制长度防止报错
+                                data_str = "\n".join([df.head(10).to_string() for df in final_res_list])
+                                prompt_summary = f"请用精炼的中文总结以下数据的主要发现 (不超过100字):\n{data_str[:5000]}"
                                 resp_summary = safe_generate(client, MODEL_FAST, prompt_summary)
                                 summary_text = resp_summary.text.strip()
                                 
-                                # 显示并保存总结
                                 st.markdown(f'<div class="mini-insight">>> {summary_text}</div>', unsafe_allow_html=True)
                                 st.session_state.messages.append({"role": "assistant", "type": "text", "content": summary_text})
-                            except Exception as e:
-                                pass # 总结失败不影响数据展示
-
-                            # ==========================================
-                            # [新增功能 START] 2. Smart 模型生成追问
-                            # ==========================================
-                            try:
-                                # 1. 获取所有可用字段名
-                                all_columns = []
-                                if df_sales is not None: all_columns.extend(df_sales.columns.tolist())
-                                if df_product is not None: all_columns.extend(df_product.columns.tolist())
-                                # 去重并转为字符串
-                                cols_str = ", ".join(list(set(all_columns)))
-
-                                # 2. 构建包含字段信息的提示词
-                                prompt_next = f"""
-                                基于生成的表格数据和洞察。
-                                
-                                【数据库完整可用字段列表】:
-                                {cols_str}
-                                
-                                【指令】
-                                针对用户的问题 "{user_query}"，从上面的“可用字段列表”中寻找灵感，
-                                给出客户最可能想深入挖掘的 2 个问题（例如：按[某个具体字段]拆分、看[某个字段]的趋势等）。
-                                
-                                严格输出 JSON 字符串列表。
-                                示例格式: ["查看该产品的分医院排名", "分析不同剂型的份额变化"]
-                                """
-                                resp_next = safe_generate(client, MODEL_SMART, prompt_next, "application/json")
-                                next_questions = clean_json_string(resp_next.text)
-
-                                if isinstance(next_questions, list) and len(next_questions) > 0:
-                                    st.markdown("### 是否追问")
-                                    c1, c2 = st.columns(2)
-                                    
-                                    def get_q_text_safe(q):
-                                        if isinstance(q, str): return q
-                                        if isinstance(q, dict): return q.get('question', list(q.values())[0])
-                                        return str(q)
-
-                                    if len(next_questions) > 0: 
-                                        q1_text = get_q_text_safe(next_questions[0])
-                                        c1.button(f"> {q1_text}", use_container_width=True, on_click=handle_followup, args=(q1_text,))
-                                    if len(next_questions) > 1: 
-                                        q2_text = get_q_text_safe(next_questions[1])
-                                        c2.button(f"> {q2_text}", use_container_width=True, on_click=handle_followup, args=(q2_text,))
-                            except Exception as e:
-                                pass # 追问生成失败不报错
-                            
-                            # ==========================================
-                            # [新增功能 END]
-                            # ==========================================
-
-                        else:
-                            st.warning("尝试模糊搜索...")
-                            fallback_code = f"result = df_product[df_product.astype(str).apply(lambda x: x.str.contains('{user_query[:2]}', case=False, na=False)).any(axis=1)].head(10)"
-                            try:
-                                res_fallback = safe_exec_code(fallback_code, exec_ctx)
-                                if not safe_check_empty(normalize_result(res_fallback)):
-                                    st.dataframe(res_fallback)
-                                    st.session_state.messages.append({"role": "assistant", "type": "df", "content": res_fallback})
-                                else:
-                                    st.markdown(f'<div class="custom-error">未找到相关数据</div>', unsafe_allow_html=True)
                             except: pass
+
+                        # --- Smart 追问 (保持原样逻辑，适配多表上下文) ---
+                        try:
+                            # 1. 获取所有可用字段名
+                            all_columns = []
+                            if df_sales is not None: all_columns.extend(df_sales.columns.tolist())
+                            if df_product is not None: all_columns.extend(df_product.columns.tolist())
+                            cols_str = ", ".join(list(set(all_columns)))
+
+                            # 2. 构建包含字段信息的提示词
+                            prompt_next = f"""
+                            基于生成的表格数据和洞察。
+                            
+                            【数据库完整可用字段列表】:
+                            {cols_str}
+                            
+                            【指令】
+                            针对用户的问题 "{user_query}"，从上面的“可用字段列表”中寻找灵感，
+                            给出客户最可能想深入挖掘的 2 个问题（例如：按[某个具体字段]拆分、看[某个字段]的趋势等）。
+                            
+                            严格输出 JSON 字符串列表。
+                            示例格式: ["查看该产品的分医院排名", "分析不同剂型的份额变化"]
+                            """
+                            resp_next = safe_generate(client, MODEL_SMART, prompt_next, "application/json")
+                            next_questions = clean_json_string(resp_next.text)
+
+                            if isinstance(next_questions, list) and len(next_questions) > 0:
+                                st.markdown("### 是否追问")
+                                c1, c2 = st.columns(2)
+                                
+                                def get_q_text_safe(q):
+                                    if isinstance(q, str): return q
+                                    if isinstance(q, dict): return q.get('question', list(q.values())[0])
+                                    return str(q)
+
+                                if len(next_questions) > 0: 
+                                    q1_text = get_q_text_safe(next_questions[0])
+                                    c1.button(f"> {q1_text}", use_container_width=True, on_click=handle_followup, args=(q1_text,))
+                                if len(next_questions) > 1: 
+                                    q2_text = get_q_text_safe(next_questions[1])
+                                    c2.button(f"> {q2_text}", use_container_width=True, on_click=handle_followup, args=(q2_text,))
+                        except Exception as e:
+                            pass # 追问生成失败不报错
+
                     except Exception as e:
-                        st.markdown(f'<div class="custom-error">代码执行错误: {e}</div>', unsafe_allow_html=True)
+                        # 全局捕获：防止卡死，显示红框错误
+                        error_msg = f"处理您的请求时遇到问题: {str(e)}"
+                        st.markdown(f'<div class="custom-error">{error_msg}</div>', unsafe_allow_html=True)
+                        st.session_state.messages.append({"role": "assistant", "type": "error", "content": error_msg})
 
             # 3. 深度分析
             elif 'analysis' in intent:
