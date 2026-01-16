@@ -906,6 +906,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     6. **变量定义检查 (CRITICAL)**: 
                         - **严禁引用未定义的变量**（例如代码中出现了 `df_excl` 或 `df_temp` 但前面没有定义它）。
                         - 凡是使用的变量，必须在当前代码块中显式赋值。
+                    "7. **上下文记忆**: 生成的多个分析角度（angles）将按顺序执行。后面的代码块可以引用前面代码块生成的变量（如 df_filtered, top5_list），无需重复定义。"
                     
                     严格输出 JSON (不要Markdown, 不要代码块): 
                     {{ 
@@ -924,9 +925,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     resp_plan = safe_generate(client, MODEL_SMART, prompt_plan, "application/json")
                     plan_json = clean_json_string(resp_plan.text)
                 
-                if not plan_json:
-                    st.error("分析规划生成失败，模型未返回有效格式。")
-                    st.stop()
+                # ... (前面是 prompt_plan 的生成和 plan_json 的获取) ...
 
                 if plan_json:
                     # [新功能] 打印分析思路
@@ -938,26 +937,31 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     
                     st.session_state.messages.append({"role": "assistant", "type": "text", "content": intro})
                     
-                    # 渲染四要素卡片 (如果有的话)
+                    # 渲染四要素卡片
                     if 'summary' in plan_json:
                         render_protocol_card(plan_json['summary'])
 
                     angles_data = []
                     
+                    # =========================================================
+                    # 【核心修复】: 在循环外初始化共享上下文，保持变量记忆
+                    # =========================================================
+                    shared_ctx = {
+                        "df_sales": df_sales.copy(), 
+                        "df_product": df_product.copy(),
+                        "pd": pd,
+                        "np": np
+                    }
+
                     for angle in plan_json.get('angles', []):
                         with st.container():
                             st.markdown(f"**> {angle['title']}**")
                             
-                            # 【修正】循环内部创建独立 Context，防止污染
-                            local_ctx = {
-                                "df_sales": df_sales.copy(), 
-                                "df_product": df_product.copy(),
-                                "pd": pd,
-                                "np": np
-                            }
-                            
                             try:
-                                res_raw = safe_exec_code(angle['code'], local_ctx)
+                                # 【核心修复】: 传入同一个 shared_ctx，而不是每次新建 local_ctx
+                                res_raw = safe_exec_code(angle['code'], shared_ctx)
+                                
+                                # 处理结果显示逻辑 (保持不变)
                                 if isinstance(res_raw, dict) and any(isinstance(v, (pd.DataFrame, pd.Series)) for v in res_raw.values()):
                                     res_df = pd.DataFrame() 
                                     for k, v in res_raw.items():
