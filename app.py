@@ -7,6 +7,10 @@ import re
 import numpy as np
 import base64
 import time
+# 引入绘图库
+import plotly.express as px
+import plotly.graph_objects as go
+
 # 确保你已经安装了 google-genai 库
 # pip install google-genai
 from google import genai
@@ -24,7 +28,9 @@ st.set_page_config(
 
 # --- 模型配置 ---
 MODEL_FAST = "gemini-2.0-flash"        
-MODEL_SMART = "gemini-3-pro-preview"        
+MODEL_SMART = "gemini-3-pro-preview"
+# [新增] 专门用于生成绘图代码的模型 (建议使用Flash以获得极速响应)
+MODEL_VISUAL = "gemini-3-pro-image-preview" 
 
 # --- 常量定义 ---
 JOIN_KEY = "药品索引"
@@ -99,10 +105,7 @@ def inject_custom_css():
             border-bottom: 1px solid var(--border-color);
             z-index: 999999 !important; 
             display: flex; align-items: center; justify-content: space-between;
-            
-            /* --- CHANGE THIS LINE --- */
-            /* Old: padding: 0 100px 0 24px; */
-            padding: 0 24px; /* Changed right padding from 100px to 24px */
+            padding: 0 24px;
         }
 
         /* 2. 侧边栏容器 (下沉到顶导下方) */
@@ -374,7 +377,6 @@ def safe_generate(client, model, prompt, mime_type="text/plain", max_retries=3):
             # 检查是否为 429 (Resource exhausted) 或 503 (Server unavailable)
             if "429" in error_str or "429" in str(getattr(e, 'code', '')) or "Resource exhausted" in error_str:
                 if retry_count == max_retries:
-                    # 超过最大重试次数，返回错误
                     return type('obj', (object,), {'text': f"Error (Max Retries): {e}"})
                 
                 wait_time = base_delay * (2 ** retry_count) # 指数退避: 2s, 4s, 8s
@@ -382,13 +384,11 @@ def safe_generate(client, model, prompt, mime_type="text/plain", max_retries=3):
                 time.sleep(wait_time)
                 retry_count += 1
             else:
-                # 如果是其他错误 (如 400 Bad Request)，直接返回，不重试
                 return type('obj', (object,), {'text': f"Error: {e}"})
 
 def stream_generate(client, model, prompt, max_retries=3):
     """
     带重试机制的流式生成
-    注意：流式生成如果中途中断，通常需要重新开始整个请求
     """
     config = types.GenerateContentConfig(response_mime_type="text/plain")
     
@@ -405,7 +405,7 @@ def stream_generate(client, model, prompt, max_retries=3):
             for chunk in response:
                 if chunk.text:
                     yield chunk.text
-            return # 成功生成完则退出函数
+            return 
             
         except Exception as e:
             error_str = str(e)
@@ -506,6 +506,65 @@ def get_avatar(role):
     else:
         return BOT_AVATAR if os.path.exists(BOT_AVATAR) else None
 
+# ================= [新增] 自动可视化函数 =================
+
+def render_chart_from_data(df, query):
+    """
+    根据数据框和查询自动生成 Plotly 图表
+    """
+    if df is None or df.empty or len(df) < 2:
+        return # 数据太少不绘图
+    
+    with st.status("正在绘制图表...", expanded=False) as status:
+        try:
+            # 简化数据预览，防止 token 溢出
+            data_preview = df.head(20).to_csv(index=False)
+            
+            prompt_visual = f"""
+            你是一位 Python 数据可视化专家。
+            
+            【任务】
+            根据以下数据和用户查询，编写使用 `plotly.express` (导入为 px) 的代码来生成一个交互式图表。
+            
+            【数据预览 (CSV)】
+            {data_preview}
+            
+            【用户查询】
+            "{query}"
+            
+            【要求】
+            1. 代码必须将 `plotly.graph_objects.Figure` 对象赋值给变量 `fig`。
+            2. **不要**使用 `fig.show()` 或 `st.plotly_chart()`，只定义 `fig` 变量。
+            3. 根据数据类型智能选择图表：
+               - 对比类 -> 条形图 (px.bar)
+               - 趋势类 -> 折线图 (px.line)
+               - 占比类 -> 饼图/环形图 (px.pie)
+            4. 设置图表模板为 'plotly_dark' 以适配黑色背景。
+            5. 返回纯 Python 代码，不要包含 Markdown 标记（如 ```python）。
+            
+            【特别注意】
+            如果数据列包含 "份额" 或 "%"，请确保 hover_data 显示格式正确。
+            """
+            
+            # 使用视觉模型（或高速模型）生成代码
+            resp = safe_generate(client, MODEL_VISUAL, prompt_visual)
+            code_str = resp.text.replace("```python", "").replace("```", "").strip()
+            
+            # 执行绘图代码
+            local_ctx = {"pd": pd, "px": px, "df": df}
+            exec(code_str, local_ctx)
+            
+            fig = local_ctx.get("fig")
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+                st.session_state.messages.append({"role": "assistant", "type": "chart", "content": fig})
+                status.update(label="图表绘制完成", state="complete")
+            else:
+                status.update(label="未能生成图表对象", state="error")
+                
+        except Exception as e:
+            status.update(label=f"绘图失败: {str(e)}", state="error")
+
 # ================= 4. 页面渲染 =================
 
 inject_custom_css()
@@ -540,7 +599,7 @@ with st.sidebar:
         else:
             st.markdown(f"<span style='font-size:11px; color:#555;'>暂无字段</span>", unsafe_allow_html=True)
 
-    # ================= [修改] 1. 时间范围 (已移至最前) =================
+    # ================= 1. 时间范围 =================
     time_range_str = "未加载"
     if df_sales is not None:
         # 尝试寻找时间列
@@ -645,6 +704,8 @@ for msg in st.session_state.messages:
             st.markdown(f"<span class='msg-prefix {role_class}'>{prefix}</span>{msg['content']}", unsafe_allow_html=True)
         elif msg["type"] == "df": 
             st.dataframe(msg["content"], use_container_width=True)
+        elif msg["type"] == "chart":
+            st.plotly_chart(msg["content"], use_container_width=True)
         elif msg["type"] == "error":
             st.markdown(f'<div class="custom-error">{msg["content"]}</div>', unsafe_allow_html=True)
 
@@ -736,7 +797,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     1. 严格按用户要求提取字段。
                     2. 使用 `pd.merge` 关联两表 (除非用户只查单表)。
                     3. **重要**: 确保所有使用的变量（如 market_share）都在代码中明确定义。不要使用未定义的变量。
-                    4. **绝对禁止**导入 IPython 或使用 display() 函数。
+                    4. **修改**: 不需要在此处生成图表，只返回处理好的 DataFrame。
                     5. 禁止使用 df.columns = [...] 强行改名，请使用 df.rename()。
                     6. **避免 'ambiguous' 错误**：如果 index name 与 column name 冲突，请在 reset_index() 前先使用 `df.index.name = None` 或重命名索引。
                     7. 结果必须赋值给变量 `result`。
@@ -806,6 +867,10 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                             formatted_df = format_display_df(res_df)
                             st.dataframe(formatted_df, use_container_width=True)
                             st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
+                            
+                            # ================= [新增] 自动绘图触发 =================
+                            render_chart_from_data(res_df, user_query)
+                            # ======================================================
 
                             # ==========================================
                             # [新增功能 START] 1. Flash 快速总结表格
@@ -925,8 +990,6 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     resp_plan = safe_generate(client, MODEL_SMART, prompt_plan, "application/json")
                     plan_json = clean_json_string(resp_plan.text)
                 
-                # ... (前面是 prompt_plan 的生成和 plan_json 的获取) ...
-
                 if plan_json:
                     # [新功能] 打印分析思路
                     intro_text = plan_json.get('intent_analysis', '分析思路生成中...')
@@ -970,6 +1033,9 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                                         st.dataframe(format_display_df(sub_df), use_container_width=True)
                                         res_df = sub_df 
                                         st.session_state.messages.append({"role": "assistant", "type": "df", "content": sub_df})
+                                        
+                                        # [新增] 深度分析也触发绘图
+                                        render_chart_from_data(sub_df, angle['title'])
                                 else:
                                     res_df = normalize_result(res_raw)
                                     if not safe_check_empty(res_df):
@@ -977,6 +1043,9 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                                         st.dataframe(formatted_df, use_container_width=True)
                                         st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
                                         
+                                        # [新增] 深度分析也触发绘图
+                                        render_chart_from_data(res_df, angle['title'])
+
                                         # [中文提示词] 数据解读
                                         prompt_mini = f"用一句话解读以下数据 (中文): \n{res_df.to_string()}"
                                         resp_mini = safe_generate(client, MODEL_FAST, prompt_mini)
