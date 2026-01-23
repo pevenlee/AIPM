@@ -511,13 +511,18 @@ def get_avatar(role):
 def generate_chart_code(df, query):
     """
     根据完整数据框和查询生成 Plotly 图表代码并执行
+    (修复版：增加了正则提取和错误处理)
     """
-    if df is None or df.empty or len(df) < 2:
+    if df is None or df.empty or len(df) < 1:
         return None
     
-    # 将全量数据转为 CSV 字符串，不截断
+    # 将全量数据转为 CSV 字符串
+    # 为了防止 token 溢出，建议限制一下行数，或者让模型只知道列名（如果数据量太大）
+    # 这里保持你原本的逻辑，但建议加上 try-catch 防止数据过大
     try:
-        data_csv = df.to_csv(index=False)
+        # 如果数据量确实巨大，建议截取前 100-200 行供模型参考结构，或者仅提供 columns info
+        # 这里为了稳健，暂取前 200 行作为样本，或者你坚持全量也可以，但要注意 API 限制
+        data_csv = df.head(200).to_csv(index=False) 
     except Exception as e:
         st.error(f"数据转换失败: {e}")
         return None
@@ -526,46 +531,75 @@ def generate_chart_code(df, query):
     你是一位 Python 数据可视化专家。
     
     【任务】
-    根据以下完整数据和用户查询，编写使用 `plotly.express` (导入为 px) 的代码来生成一个交互式图表。
+    根据以下数据样本（df）和用户查询，编写使用 `plotly.express` (px) 或 `plotly.graph_objects` (go) 的代码。
     
-    【数据全量 (CSV)】
+    【数据样本 (CSV)】
     {data_csv}
     
-    【用户查询/上下文】
+    【用户查询】
     "{query}"
     
-    【要求】
-    1. 代码必须将 `plotly.graph_objects.Figure` 对象赋值给变量 `fig`。
-    2. **不要**使用 `fig.show()` 或 `st.plotly_chart()`，只定义 `fig` 变量。
-    3. 根据数据类型智能选择图表：
-       - 对比类 -> 条形图 (px.bar)
-       - 趋势类 -> 折线图 (px.line)
-       - 占比类 -> 饼图/环形图 (px.pie)
-       - 贡献类 -> 瀑布图
-       - 多维对比 -> 气泡图
-    4. 设置图表模板为 'plotly_dark' 以适配黑色背景。
-    5. 返回纯 Python 代码，不要包含 Markdown 标记（如 ```python）。
-    
-    【特别注意】
-    数据已包含所有行，请完整可视化，不要自行截断。
+    【严格约束】
+    1. 代码必须将生成的图表对象赋值给变量 `fig`。
+    2. **不要**包含 `fig.show()`。
+    3. 数据变量名为 `df` (在执行环境中已存在完整数据，无需读取 CSV，直接使用 df 变量)。
+    4. 只需要返回 Python 代码块，不要有任何解释性文字。
+    5. 设置 template='plotly_dark'。
+    6. 如果制表过程中遇到极值，影响呈现。请遇到这种情况时将极端值截断呈现
     """
     
     try:
         # 使用视觉模型（或高速模型）生成代码
         resp = safe_generate(client, MODEL_VISUAL, prompt_visual)
-        if "Error" in resp.text:
+        if hasattr(resp, 'text') and "Error" in resp.text:
             return None
             
-        code_str = resp.text.replace("```python", "").replace("```", "").strip()
+        text = resp.text
+        code_str = ""
+
+        # --- 核心修复：使用正则表达式提取代码块 ---
+        # 1. 尝试提取 ```python ... ``` 或 ``` ... ``` 中间的内容
+        match = re.search(r'```(?:python)?\s*(.*?)\s*```', text, re.DOTALL | re.IGNORECASE)
+        if match:
+            code_str = match.group(1)
+        else:
+            # 2. 如果没有代码块标记，尝试直接清洗常见无关词汇
+            # 这种情况较少，但为了兜底
+            code_str = text.strip()
+            
+        # 二次清洗：去除可能残留的 fig.show() 或 markdown 标记
+        code_str = code_str.replace("fig.show()", "").strip()
         
-        # 执行绘图代码
-        local_ctx = {"pd": pd, "px": px, "df": df}
-        exec(code_str, local_ctx)
+        if not code_str:
+            st.error("未提取到有效的绘图代码")
+            return None
+
+        # --- 执行代码 ---
+        # 补充 go (graph_objects) 到上下文中，防止模型使用 go.Figure 报错
+        local_ctx = {
+            "pd": pd, 
+            "px": px, 
+            "go": go, 
+            "np": np,
+            "df": df  # 传入完整 df
+        }
+        
+        try:
+            exec(code_str, local_ctx)
+        except SyntaxError as e:
+            st.error(f"生成的代码存在语法错误: {e}")
+            st.code(code_str, language='python') # 展示错误代码以便调试
+            return None
+        except Exception as e:
+            st.error(f"图表代码执行出错: {e}")
+            st.code(code_str, language='python')
+            return None
         
         fig = local_ctx.get("fig")
         return fig
+
     except Exception as e:
-        st.error(f"图表生成失败: {str(e)}")
+        st.error(f"图表生成流程异常: {str(e)}")
         return None
 
 # ================= 4. 页面渲染 =================
