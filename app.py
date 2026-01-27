@@ -7,10 +7,6 @@ import re
 import numpy as np
 import base64
 import time
-# 引入绘图库
-import plotly.express as px
-import plotly.graph_objects as go
-
 # 确保你已经安装了 google-genai 库
 # pip install google-genai
 from google import genai
@@ -27,14 +23,12 @@ st.set_page_config(
 )
 
 # --- 模型配置 ---
-MODEL_FAST = "gemini-2.0-flash-exp"          
-MODEL_SMART = "gemini-2.0-flash-thinking-exp-1219"
-# [新增] 专门用于生成绘图代码的模型
-MODEL_VISUAL = "gemini-2.0-flash-exp" 
+MODEL_FAST = "gemini-2.0-flash"        
+MODEL_SMART = "gemini-3-pro-preview"        
 
 # --- 常量定义 ---
 JOIN_KEY = "药品索引"
-FILE_FACT = "fact.csv"          
+FILE_FACT = "fact.csv"        
 FILE_DIM = "ipmdata.xlsx"
 LOGO_FILE = "logo.png"
 
@@ -82,26 +76,18 @@ def inject_custom_css():
         /* 按钮样式 */
         .stButton button {
             border-radius: var(--radius-md) !important;
-            text-align: center !important;
-            justify-content: center !important;
+            text-align: left !important;
+            justify-content: flex-start !important;
+            padding-left: 15px !important;
             border: 1px solid #333 !important;
             background: #111 !important;
             color: #CCC !important;
             transition: all 0.2s ease;
-            height: 42px !important; /* 强制高度以便与输入框对齐 */
         }
         .stButton button:hover {
             border-color: #666 !important;
             color: #FFF !important;
             background: #222 !important;
-        }
-
-        /* 输入框样式修正 */
-        div[data-testid="stTextInput"] input {
-            height: 42px !important;
-            background: #050505 !important;
-            border: 1px solid #333 !important;
-            color: #FFF !important;
         }
 
         /* === 布局核心修正 === */
@@ -113,7 +99,10 @@ def inject_custom_css():
             border-bottom: 1px solid var(--border-color);
             z-index: 999999 !important; 
             display: flex; align-items: center; justify-content: space-between;
-            padding: 0 24px;
+            
+            /* --- CHANGE THIS LINE --- */
+            /* Old: padding: 0 100px 0 24px; */
+            padding: 0 24px; /* Changed right padding from 100px to 24px */
         }
 
         /* 2. 侧边栏容器 (下沉到顶导下方) */
@@ -153,7 +142,7 @@ def inject_custom_css():
             background: transparent !important;
         }
         
-        /* === 5. 侧边栏数据字典样式 (Chips) === */
+        /* === 5. [新增] 侧边栏数据字典样式 (Chips) === */
         .dict-category {
             font-size: 13px;
             font-weight: 700;
@@ -385,6 +374,7 @@ def safe_generate(client, model, prompt, mime_type="text/plain", max_retries=3):
             # 检查是否为 429 (Resource exhausted) 或 503 (Server unavailable)
             if "429" in error_str or "429" in str(getattr(e, 'code', '')) or "Resource exhausted" in error_str:
                 if retry_count == max_retries:
+                    # 超过最大重试次数，返回错误
                     return type('obj', (object,), {'text': f"Error (Max Retries): {e}"})
                 
                 wait_time = base_delay * (2 ** retry_count) # 指数退避: 2s, 4s, 8s
@@ -392,11 +382,13 @@ def safe_generate(client, model, prompt, mime_type="text/plain", max_retries=3):
                 time.sleep(wait_time)
                 retry_count += 1
             else:
+                # 如果是其他错误 (如 400 Bad Request)，直接返回，不重试
                 return type('obj', (object,), {'text': f"Error: {e}"})
 
 def stream_generate(client, model, prompt, max_retries=3):
     """
     带重试机制的流式生成
+    注意：流式生成如果中途中断，通常需要重新开始整个请求
     """
     config = types.GenerateContentConfig(response_mime_type="text/plain")
     
@@ -413,7 +405,7 @@ def stream_generate(client, model, prompt, max_retries=3):
             for chunk in response:
                 if chunk.text:
                     yield chunk.text
-            return 
+            return # 成功生成完则退出函数
             
         except Exception as e:
             error_str = str(e)
@@ -514,102 +506,6 @@ def get_avatar(role):
     else:
         return BOT_AVATAR if os.path.exists(BOT_AVATAR) else None
 
-# ================= [修改] 按需全量可视化函数 =================
-
-def generate_chart_code(df, query):
-    """
-    根据完整数据框和查询生成 Plotly 图表代码并执行
-    (修复版：增加了正则提取和错误处理)
-    """
-    if df is None or df.empty or len(df) < 1:
-        return None
-    
-    # 将全量数据转为 CSV 字符串
-    # 为了防止 token 溢出，建议限制一下行数，或者让模型只知道列名（如果数据量太大）
-    # 这里保持你原本的逻辑，但建议加上 try-catch 防止数据过大
-    try:
-        # 如果数据量确实巨大，建议截取前 100-200 行供模型参考结构，或者仅提供 columns info
-        # 这里为了稳健，暂取前 200 行作为样本，或者你坚持全量也可以，但要注意 API 限制
-        data_csv = df.head(200).to_csv(index=False) 
-    except Exception as e:
-        st.error(f"数据转换失败: {e}")
-        return None
-
-    prompt_visual = f"""
-    你是一位 Python 数据可视化专家。
-    
-    【任务】
-    根据以下数据样本（df）和用户查询，编写使用 `plotly.express` (px) 或 `plotly.graph_objects` (go) 的代码。
-    
-    【数据样本 (CSV)】
-    {data_csv}
-    
-    【用户查询】
-    "{query}"
-    
-    【严格约束】
-    1. 代码必须将生成的图表对象赋值给变量 `fig`。
-    2. **不要**包含 `fig.show()`。
-    3. 数据变量名为 `df` (在执行环境中已存在完整数据，无需读取 CSV，直接使用 df 变量)。
-    4. 只需要返回 Python 代码块，不要有任何解释性文字。
-    5. 设置 template='plotly_dark'。
-    6. 如果制表过程中遇到极值，影响呈现。请遇到这种情况时将极端值截断呈现
-    """
-    
-    try:
-        # 使用视觉模型（或高速模型）生成代码
-        resp = safe_generate(client, MODEL_VISUAL, prompt_visual)
-        if hasattr(resp, 'text') and "Error" in resp.text:
-            return None
-            
-        text = resp.text
-        code_str = ""
-
-        # --- 核心修复：使用正则表达式提取代码块 ---
-        # 1. 尝试提取 ```python ... ``` 或 ``` ... ``` 中间的内容
-        match = re.search(r'```(?:python)?\s*(.*?)\s*```', text, re.DOTALL | re.IGNORECASE)
-        if match:
-            code_str = match.group(1)
-        else:
-            # 2. 如果没有代码块标记，尝试直接清洗常见无关词汇
-            # 这种情况较少，但为了兜底
-            code_str = text.strip()
-            
-        # 二次清洗：去除可能残留的 fig.show() 或 markdown 标记
-        code_str = code_str.replace("fig.show()", "").strip()
-        
-        if not code_str:
-            st.error("未提取到有效的绘图代码")
-            return None
-
-        # --- 执行代码 ---
-        # 补充 go (graph_objects) 到上下文中，防止模型使用 go.Figure 报错
-        local_ctx = {
-            "pd": pd, 
-            "px": px, 
-            "go": go, 
-            "np": np,
-            "df": df  # 传入完整 df
-        }
-        
-        try:
-            exec(code_str, local_ctx)
-        except SyntaxError as e:
-            st.error(f"生成的代码存在语法错误: {e}")
-            st.code(code_str, language='python') # 展示错误代码以便调试
-            return None
-        except Exception as e:
-            st.error(f"图表代码执行出错: {e}")
-            st.code(code_str, language='python')
-            return None
-        
-        fig = local_ctx.get("fig")
-        return fig
-
-    except Exception as e:
-        st.error(f"图表生成流程异常: {str(e)}")
-        return None
-
 # ================= 4. 页面渲染 =================
 
 inject_custom_css()
@@ -644,7 +540,7 @@ with st.sidebar:
         else:
             st.markdown(f"<span style='font-size:11px; color:#555;'>暂无字段</span>", unsafe_allow_html=True)
 
-    # ================= 1. 时间范围 =================
+    # ================= [修改] 1. 时间范围 (已移至最前) =================
     time_range_str = "未加载"
     if df_sales is not None:
         # 尝试寻找时间列
@@ -739,8 +635,8 @@ st.markdown(f"""
 
 if "messages" not in st.session_state: st.session_state.messages = []
 
-# --- Chat History & Manual Chart Trigger ---
-for idx, msg in enumerate(st.session_state.messages):
+# --- Chat History ---
+for msg in st.session_state.messages:
     avatar_file = get_avatar(msg["role"])
     with st.chat_message(msg["role"], avatar=avatar_file):
         if msg["type"] == "text": 
@@ -749,43 +645,6 @@ for idx, msg in enumerate(st.session_state.messages):
             st.markdown(f"<span class='msg-prefix {role_class}'>{prefix}</span>{msg['content']}", unsafe_allow_html=True)
         elif msg["type"] == "df": 
             st.dataframe(msg["content"], use_container_width=True)
-            
-            # --- [修改开始] 增加绘图指令输入框和按钮 ---
-            c_input, c_btn = st.columns([3, 1], vertical_alignment="bottom")
-            
-            with c_input:
-                # 获取该位置的输入内容 (如果之前输入过，Streamlit 会保持状态)
-                chart_req = st.text_input(
-                    "绘图指令", 
-                    placeholder="可选: 输入绘图要求(如: 用折线图, 红色)...", 
-                    key=f"chart_inst_{idx}", 
-                    label_visibility="collapsed"
-                )
-            
-            with c_btn:
-                # 按钮点击状态
-                is_clicked = st.button("▶︎ 制作图表", key=f"btn_chart_{idx}", use_container_width=True)
-
-            if is_clicked:
-                with st.spinner("正在基于全量数据生成图表..."):
-                    # 获取该数据表对应的原始查询
-                    base_query = msg.get("query", "根据数据绘制图表")
-                    
-                    # 组合新的查询：如果用户输入了指令，则追加到 prompt 中
-                    final_chart_query = f"{base_query}。用户额外绘图指令：{chart_req}" if chart_req else base_query
-                    
-                    # 传入组合后的 Query
-                    fig = generate_chart_code(msg["content"], final_chart_query)
-                    
-                    if fig:
-                        st.session_state.messages.append({"role": "assistant", "type": "chart", "content": fig})
-                        st.rerun() # 刷新页面以显示新图表
-                    else:
-                        st.error("图表生成失败，请重试。")
-            # --- [修改结束] ---
-                        
-        elif msg["type"] == "chart":
-            st.plotly_chart(msg["content"], use_container_width=True)
         elif msg["type"] == "error":
             st.markdown(f'<div class="custom-error">{msg["content"]}</div>', unsafe_allow_html=True)
 
@@ -860,8 +719,6 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             
             # 2. 简单查询
             if 'analysis' not in intent and 'irrelevant' not in intent:
-                
-                plan = None
                 with st.spinner("正在生成查询代码，这个过程可能需要1~2分钟，请耐心等待…"):
                     # [中文提示词] 简单查询 & 四要素提取
                     prompt_code = f"""
@@ -879,7 +736,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     1. 严格按用户要求提取字段。
                     2. 使用 `pd.merge` 关联两表 (除非用户只查单表)。
                     3. **重要**: 确保所有使用的变量（如 market_share）都在代码中明确定义。不要使用未定义的变量。
-                    4. **修改**: 不需要在此处生成图表，只返回处理好的 DataFrame。
+                    4. **绝对禁止**导入 IPython 或使用 display() 函数。
                     5. 禁止使用 df.columns = [...] 强行改名，请使用 df.rename()。
                     6. **避免 'ambiguous' 错误**：如果 index name 与 column name 冲突，请在 reset_index() 前先使用 `df.index.name = None` 或重命名索引。
                     7. 结果必须赋值给变量 `result`。
@@ -914,7 +771,6 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     resp_code = safe_generate(client, MODEL_SMART, prompt_code, "application/json")
                     plan = clean_json_string(resp_code.text)
                 
-                # --- [修正点] 将渲染逻辑移出 st.spinner 块 ---
                 if plan:
                     # [新功能] 打印数据调用逻辑
                     summary_obj = plan.get('summary', {})
@@ -949,34 +805,8 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                         if not safe_check_empty(res_df):
                             formatted_df = format_display_df(res_df)
                             st.dataframe(formatted_df, use_container_width=True)
-                            
-                            # [修改] 不自动绘图，而是保存数据和Query到 session_state
-                            # 界面上通过历史记录循环中的 st.button 触发绘图
-                            st.session_state.messages.append({
-                                "role": "assistant", 
-                                "type": "df", 
-                                "content": formatted_df, 
-                                "query": user_query # 保存上下文以便绘图使用
-                            })
-                            
-                            # ================= 🔴 即时显示按钮 🔴 =================
-                            # [修改] 即时显示也加上输入框，保持一致性
-                            current_key_suffix = len(st.session_state.messages)-1
-                            ic_input, ic_btn = st.columns([3, 1], vertical_alignment="bottom")
-                            with ic_input:
-                                # 这个 Key 必须和 History Loop 里的对应 Key 一致 (idx = current_key_suffix)
-                                # 这样用户输入的内容在 Rerun 后会被 History Loop 读取到
-                                st.text_input(
-                                    "即时绘图指令", 
-                                    placeholder="可选: 指定图表类型或颜色...", 
-                                    key=f"chart_inst_{current_key_suffix}",
-                                    label_visibility="collapsed"
-                                )
-                            with ic_btn:
-                                if st.button("▶︎ 制作图表", key=f"btn_chart_{current_key_suffix}", use_container_width=True):
-                                    st.rerun()
-                            # =======================================================
-                            
+                            st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
+
                             # ==========================================
                             # [新增功能 START] 1. Flash 快速总结表格
                             # ==========================================
@@ -1016,7 +846,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                                 严格输出 JSON 字符串列表。
                                 示例格式: ["查看该产品的分医院排名", "分析不同剂型的份额变化"]
                                 """
-                                resp_next = safe_generate(client, MODEL_FAST, prompt_next, "application/json")
+                                resp_next = safe_generate(client, MODEL_SMART, prompt_next, "application/json")
                                 next_questions = clean_json_string(resp_next.text)
 
                                 if isinstance(next_questions, list) and len(next_questions) > 0:
@@ -1048,26 +878,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                                 res_fallback = safe_exec_code(fallback_code, exec_ctx)
                                 if not safe_check_empty(normalize_result(res_fallback)):
                                     st.dataframe(res_fallback)
-                                    st.session_state.messages.append({
-                                        "role": "assistant", 
-                                        "type": "df", 
-                                        "content": res_fallback,
-                                        "query": user_query
-                                    })
-                                    # ================= 🔴 即时显示按钮 🔴 =================
-                                    current_key_suffix = len(st.session_state.messages)-1
-                                    ic_input, ic_btn = st.columns([3, 1], vertical_alignment="bottom")
-                                    with ic_input:
-                                        st.text_input(
-                                            "即时绘图指令", 
-                                            placeholder="可选: 指定图表类型或颜色...", 
-                                            key=f"chart_inst_{current_key_suffix}",
-                                            label_visibility="collapsed"
-                                        )
-                                    with ic_btn:
-                                        if st.button("▶︎ 制作图表", key=f"btn_chart_{current_key_suffix}", use_container_width=True):
-                                            st.rerun()
-                                    # =======================================================
+                                    st.session_state.messages.append({"role": "assistant", "type": "df", "content": res_fallback})
                                 else:
                                     st.markdown(f'<div class="custom-error">未找到相关数据</div>', unsafe_allow_html=True)
                             except: pass
@@ -1077,7 +888,6 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             # 3. 深度分析
             elif 'analysis' in intent:
                 
-                plan_json = None
                 with st.spinner("正在规划分析路径，这个过程可能需要1~2分钟，请耐心等待..."):
                     # [中文提示词] 深度分析 & 四要素提取
                     prompt_plan = f"""
@@ -1115,7 +925,8 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                     resp_plan = safe_generate(client, MODEL_SMART, prompt_plan, "application/json")
                     plan_json = clean_json_string(resp_plan.text)
                 
-                # --- [修正点] 将渲染逻辑移出 st.spinner 块 ---
+                # ... (前面是 prompt_plan 的生成和 plan_json 的获取) ...
+
                 if plan_json:
                     # [新功能] 打印分析思路
                     intro_text = plan_json.get('intent_analysis', '分析思路生成中...')
@@ -1150,7 +961,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                                 # 【核心修复】: 传入同一个 shared_ctx，而不是每次新建 local_ctx
                                 res_raw = safe_exec_code(angle['code'], shared_ctx)
                                 
-                                # 处理结果显示逻辑
+                                # 处理结果显示逻辑 (保持不变)
                                 if isinstance(res_raw, dict) and any(isinstance(v, (pd.DataFrame, pd.Series)) for v in res_raw.values()):
                                     res_df = pd.DataFrame() 
                                     for k, v in res_raw.items():
@@ -1158,64 +969,22 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                                         sub_df = normalize_result(v)
                                         st.dataframe(format_display_df(sub_df), use_container_width=True)
                                         res_df = sub_df 
-                                        # 保存到历史，带上 query 方便后续绘图
-                                        st.session_state.messages.append({
-                                            "role": "assistant", 
-                                            "type": "df", 
-                                            "content": sub_df,
-                                            "query": f"{angle['title']} - {user_query}"
-                                        })
-                                        # ================= 🔴 即时显示按钮 🔴 =================
-                                        current_key_suffix = len(st.session_state.messages)-1
-                                        ic_input, ic_btn = st.columns([3, 1], vertical_alignment="bottom")
-                                        with ic_input:
-                                            st.text_input(
-                                                "即时绘图指令", 
-                                                placeholder="可选: 指定图表类型或颜色...", 
-                                                key=f"chart_inst_{current_key_suffix}",
-                                                label_visibility="collapsed"
-                                            )
-                                        with ic_btn:
-                                            if st.button("▶︎ 制作图表", key=f"btn_chart_{current_key_suffix}", use_container_width=True):
-                                                st.rerun()
-                                        # =======================================================
-                                        
+                                        st.session_state.messages.append({"role": "assistant", "type": "df", "content": sub_df})
                                 else:
                                     res_df = normalize_result(res_raw)
                                     if not safe_check_empty(res_df):
                                         formatted_df = format_display_df(res_df)
                                         st.dataframe(formatted_df, use_container_width=True)
-                                        st.session_state.messages.append({
-                                            "role": "assistant", 
-                                            "type": "df", 
-                                            "content": formatted_df,
-                                            "query": f"{angle['title']} - {user_query}"
-                                        })
-                                        # ================= 🔴 即时显示按钮 🔴 =================
-                                        current_key_suffix = len(st.session_state.messages)-1
-                                        ic_input, ic_btn = st.columns([3, 1], vertical_alignment="bottom")
-                                        with ic_input:
-                                            st.text_input(
-                                                "即时绘图指令", 
-                                                placeholder="可选: 指定图表类型或颜色...", 
-                                                key=f"chart_inst_{current_key_suffix}",
-                                                label_visibility="collapsed"
-                                            )
-                                        with ic_btn:
-                                            if st.button("▶︎ 制作图表", key=f"btn_chart_{current_key_suffix}", use_container_width=True):
-                                                st.rerun()
-                                        # =======================================================
-
+                                        st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
+                                        
                                         # [中文提示词] 数据解读
                                         prompt_mini = f"用一句话解读以下数据 (中文): \n{res_df.to_string()}"
                                         resp_mini = safe_generate(client, MODEL_FAST, prompt_mini)
                                         explanation = resp_mini.text
                                         st.markdown(f'<div class="mini-insight">>> {explanation}</div>', unsafe_allow_html=True)
                                         angles_data.append({"title": angle['title'], "explanation": explanation})
-                                        
                                     else:
                                         st.warning(f"{angle['title']} 暂无数据")
-
                             except Exception as e:
                                 st.error(f"分析错误: {e}")
 
@@ -1249,7 +1018,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                         仅输出一个 JSON 字符串列表。
                         示例格式: ["分析各省份的市场表现差异", "查看Top5企业的竞争格局"]
                         """
-                        resp_next = safe_generate(client, MODEL_FAST, prompt_next, "application/json")
+                        resp_next = safe_generate(client, MODEL_SMART, prompt_next, "application/json")
                         next_questions = clean_json_string(resp_next.text)
 
                         if isinstance(next_questions, list) and len(next_questions) > 0:
