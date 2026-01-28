@@ -958,18 +958,58 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                             st.markdown(f"**> {angle['title']}**")
                             
                             try:
-                                # 【核心修复】: 传入同一个 shared_ctx，而不是每次新建 local_ctx
+                                # 【核心修复】: 传入同一个 shared_ctx
                                 res_raw = safe_exec_code(angle['code'], shared_ctx)
                                 
-                                # 处理结果显示逻辑 (保持不变)
-                                if isinstance(res_raw, dict) and any(isinstance(v, (pd.DataFrame, pd.Series)) for v in res_raw.values()):
+                                # === [优化开始] 智能判断展示方式 ===
+                                
+                                # 1. 预判：这是否是一个"纯指标字典" (即所有值都是单行/单个数值)
+                                is_pure_metrics = False
+                                if isinstance(res_raw, dict):
+                                    is_pure_metrics = True
+                                    for v in res_raw.values():
+                                        # 如果存在多行数据的 DataFrame/Series，则不算纯指标
+                                        if isinstance(v, (pd.DataFrame, pd.Series)) and len(v) > 1:
+                                            is_pure_metrics = False
+                                            break
+                                
+                                # 2. 分支 A: 如果是纯指标字典 -> 合并成一张表显示
+                                if is_pure_metrics and isinstance(res_raw, dict):
+                                    # 将字典扁平化处理
+                                    flat_records = []
+                                    for k, v in res_raw.items():
+                                        # 提取真实值
+                                        val = v
+                                        if isinstance(v, (pd.DataFrame, pd.Series)):
+                                            if not v.empty:
+                                                val = v.iloc[0]
+                                                if isinstance(v, pd.DataFrame): val = v.iloc[0, 0] # 取第一行第一列
+                                            else:
+                                                val = "-"
+                                        flat_records.append({"指标名称": k, "计算结果": val})
+                                    
+                                    # 生成统一的 DataFrame
+                                    if flat_records:
+                                        merged_df = pd.DataFrame(flat_records)
+                                        # 格式化并展示
+                                        formatted_df = format_display_df(merged_df)
+                                        st.dataframe(formatted_df, use_container_width=True, hide_index=True)
+                                        res_df = formatted_df # 用于后续生成 summary
+                                        st.session_state.messages.append({"role": "assistant", "type": "df", "content": formatted_df})
+                                    else:
+                                        st.warning(f"{angle['title']} 计算结果为空")
+
+                                # 3. 分支 B: 如果包含复杂表格 (即原来的逻辑) -> 分开展示
+                                elif isinstance(res_raw, dict) and any(isinstance(v, (pd.DataFrame, pd.Series)) for v in res_raw.values()):
                                     res_df = pd.DataFrame() 
                                     for k, v in res_raw.items():
-                                        st.markdown(f"**- {k}**")
+                                        st.markdown(f"**🔹 {k}**") # 加个图标稍微美化一下标题
                                         sub_df = normalize_result(v)
                                         st.dataframe(format_display_df(sub_df), use_container_width=True)
                                         res_df = sub_df 
                                         st.session_state.messages.append({"role": "assistant", "type": "df", "content": sub_df})
+                                
+                                # 4. 分支 C: 单一结果
                                 else:
                                     res_df = normalize_result(res_raw)
                                     if not safe_check_empty(res_df):
